@@ -1,0 +1,8 @@
+{
+    "go.toolsEnvVars": {
+        "GOOS": "linux",
+        "GOARCH": "arm",
+        "GOROOT": "/home/red/.cache/tinygo/goroot-1ab0f503e2992a3ed232ddbf784ce48f7218842e8d210032474adf5ee9c2398f",
+        "GOFLAGS": "-tags=cortexm,baremetal,linux,arm,nrf52840,nrf,nrf52840_reset_uf2,softdevice,s140v6,nicenano,tinygo,purego,osusergo,math_big_pure_go,gc.conservative,scheduler.tasks,serial.usb"
+    }
+}
