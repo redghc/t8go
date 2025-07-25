@@ -6,14 +6,8 @@ import (
 	"github.com/redghc/t8go"
 )
 
-type AddressMode uint16
-
-func (a AddressMode) uint8() uint8 {
-	return uint8(a)
-}
-
-func (a AddressMode) uint16() uint16 {
-	return uint16(a)
+type displayConfig struct {
+	vccMode VCCMode
 }
 
 type display struct {
@@ -21,6 +15,8 @@ type display struct {
 	address AddressMode
 	width   int16
 	height  int16
+
+	vccMode VCCMode // Default: VCC_MODE_EXTERNAL
 }
 
 var _ t8go.Display = &display{}
@@ -32,12 +28,54 @@ func NewI2C(bus *machine.I2C, address AddressMode, width, height int16) t8go.Dis
 		address: address,
 		width:   width,
 		height:  height,
+		vccMode: VCC_MODE_EXTERNAL, // Default VCC mode
 	}
 }
 
 // Command sends a command byte to the display
 func (d *display) Command(cmd byte) error {
-	return d.bus.WriteRegister(d.address.uint8(), CONTROL_CMD_SINGLE, []byte{cmd})
+	return d.bus.WriteRegister(d.address, CONTROL_CMD_SINGLE, []byte{cmd})
+}
+
+func (d *display) Init(config displayConfig) error {
+	if config.vccMode != 0 {
+		d.vccMode = config.vccMode
+	}
+
+	// --
+
+	var pumpMode byte
+	var contrast byte
+	var chargePeriod byte
+	if d.vccMode == VCC_MODE_EXTERNAL {
+		pumpMode = CHARGE_PUMP_SETTING_OFF
+		contrast = 0x9F
+		chargePeriod = 0x22
+	} else {
+		pumpMode = CHARGE_PUMP_SETTING_ON
+		contrast = 0xCF
+		chargePeriod = 0xF1
+	}
+
+	seq := []byte{
+		SET_DISPLAY_OFF,
+		SET_DISPLAY_CLOCK_DIVIDE_RATIO, 0x80,
+		SET_MULTIPLEX_RATIO, 0x3F,
+		SET_DISPLAY_OFFSET, 0x00,
+		SET_START_LINE | 0x00,
+		CHARGE_PUMP_SETTING, pumpMode,
+		SET_SEGMENT_REMAP | 0x01,
+		SET_COM_OUTPUT_SCAN_DIRECTION_DEC,
+		SET_COM_PINS, 0x12,
+		SET_CONTRAST, contrast,
+		SET_PRE_CHARGE_PERIOD, chargePeriod,
+		SET_VCOM_DESELECT_LEVEL, 0x20,
+		DISPLAY_ALL_ON_RESUME,
+		SET_NORMAL_DISPLAY,
+		SET_DISPLAY_ON,
+	}
+
+	return d.bus.WriteRegister(d.address, CONTROL_CMD_STREAM, seq)
 }
 
 // Size returns the display dimensions
