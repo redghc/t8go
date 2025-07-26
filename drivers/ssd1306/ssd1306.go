@@ -1,29 +1,34 @@
 package ssd1306
 
 import (
+	"errors"
 	"machine"
 
 	"github.com/redghc/t8go"
 )
 
-// * ----- Definitions -----s
+// * ----- Definitions -----
 
-type displayConfig struct {
-	width   int16
-	height  int16
-	vccMode VCCMode
+type Config struct {
+	Width   uint8
+	Height  uint8
+	VCCMode VCCMode
 }
 
 type display struct {
 	bus     *machine.I2C
 	address AddressMode
 
-	vccMode VCCMode // Default: VCC_MODE_EXTERNAL
+	width   uint8   // Default: 128
+	height  uint8   // Default: 64
+	vccMode VCCMode // Default: VCC_EXTERNAL
 
-	width  int16 // Default: 128
-	height int16 // Default: 64
+	buffer  []byte
+	bufSize int
 
-	buffer []byte // Buffer to hold the display data
+	// Pre-allocated command buffers to avoid allocations
+	cmdBuf  [32]byte
+	addrBuf [6]byte
 }
 
 var _ t8go.Display = &display{}
@@ -31,113 +36,174 @@ var _ t8go.Display = &display{}
 // * ----- Constructors -----
 
 // NewI2C creates a new SSD1306 display instance using I2C communication
-func NewI2C(bus *machine.I2C, address AddressMode) t8go.Display {
-	return &display{
+func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.Display, error) {
+	if bus == nil {
+		return nil, errors.New("I2C bus cannot be nil")
+	}
+
+	if config.Width == 0 {
+		config.Width = 128 // Default width
+	}
+	if config.Height == 0 {
+		config.Height = 64 // Default height
+	}
+	vccMode := config.VCCMode
+	if vccMode == 0 {
+		vccMode = VCC_EXTERNAL
+	}
+
+	bufferSize := int(config.Width) * int(config.Height) / 8
+
+	d := &display{
 		bus:     bus,
 		address: address,
-		vccMode: VCC_MODE_EXTERNAL,
+		width:   config.Width,
+		height:  config.Height,
+		vccMode: vccMode,
+		buffer:  make([]byte, bufferSize),
+		bufSize: bufferSize,
 	}
+
+	// Initialize the display immediately
+	if err := d.init(d.width, d.height); err != nil {
+		return nil, err
+	}
+
+	return d, nil
 }
 
-// Init initializes the display with the given configuration
-func (d *display) Init(config displayConfig) error {
-	if config.width != 0 {
-		d.width = config.width
-	} else {
-		d.width = 128 // Default width
-	}
-
-	if config.height != 0 {
-		d.height = config.height
-	} else {
-		d.height = 64 // Default height
-	}
-
-	if config.vccMode != 0 {
-		d.vccMode = config.vccMode
-	} else {
-		d.vccMode = VCC_MODE_EXTERNAL // Default VCC mode
-	}
-
-	// --
-
-	var pumpMode byte
-	var contrast byte
-	var chargePeriod byte
-	if d.vccMode == VCC_MODE_EXTERNAL {
-		pumpMode = CHARGE_PUMP_SETTING_OFF
+// init initializes the display
+func (d *display) init(width, height uint8) error {
+	// Determine VCC-dependent settings
+	var chargePump, contrast, preCharge uint8
+	if d.vccMode == VCC_EXTERNAL {
+		chargePump = CHARGE_PUMP_SETTING_OFF
 		contrast = 0x9F
-		chargePeriod = 0x22
+		preCharge = 0x22
 	} else {
-		pumpMode = CHARGE_PUMP_SETTING_ON
+		chargePump = CHARGE_PUMP_SETTING_ON
 		contrast = 0xCF
-		chargePeriod = 0xF1
+		preCharge = 0xF1
 	}
 
-	seq := []byte{
+	// Build initialization sequence in pre-allocated buffer
+	cmdSeq := d.cmdBuf[:0]
+	cmdSeq = append(cmdSeq,
 		SET_DISPLAY_OFF,
 		SET_DISPLAY_CLOCK_DIVIDE_RATIO, 0x80,
 		SET_MULTIPLEX_RATIO, 0x3F,
 		SET_DISPLAY_OFFSET, 0x00,
-		SET_START_LINE | 0x00,
-		CHARGE_PUMP_SETTING, pumpMode,
-		SET_SEGMENT_REMAP | 0x01,
+		SET_START_LINE|0x00,
+		CHARGE_PUMP_SETTING, chargePump,
+		SET_MEMORY_ADDRESSING_MODE, horizontalAddressingMode,
+		SET_SEGMENT_REMAP|0x01,
 		SET_COM_OUTPUT_SCAN_DIRECTION_DEC,
 		SET_COM_PINS, 0x12,
 		SET_CONTRAST, contrast,
-		SET_PRE_CHARGE_PERIOD, chargePeriod,
+		SET_PRE_CHARGE_PERIOD, preCharge,
 		SET_VCOM_DESELECT_LEVEL, 0x20,
 		DISPLAY_ALL_ON_RESUME,
 		SET_NORMAL_DISPLAY,
+		DEACTIVATE_SCROLL,
 		SET_DISPLAY_ON,
-	}
+	)
 
-	return d.bus.WriteRegister(d.address, CONTROL_CMD_STREAM, seq)
+	return d.bus.WriteRegister(d.address, CONTROL_CMD_STREAM, cmdSeq)
+}
+
+// * ----- Getter methods -----
+
+// Size returns the display dimensions as uint8 for interface compatibility
+func (d *display) Size() (width, height uint8) {
+	return d.width, d.height
+}
+
+// BufferSize returns the size of the display buffer
+func (d *display) BufferSize() int {
+	return d.bufSize
+}
+
+// Buffer returns the display buffer
+func (d *display) Buffer() []byte {
+	return d.buffer
 }
 
 // * ----- Display methods -----
 
 // ClearBuffer clears the display buffer
 func (d *display) ClearBuffer() {
-	for i := 0; i < len(d.buffer); i++ {
+	for i := range d.buffer {
 		d.buffer[i] = 0
 	}
 }
 
-// ClearDisplay clears the image buffer and display
+// ClearDisplay clears the buffer and immediately updates the display
 func (d *display) ClearDisplay() {
 	d.ClearBuffer()
-	d.Display()
+	_ = d.Display()
 }
 
-// Command sends a command byte to the display
+// Command sends a single command byte to the display
 func (d *display) Command(cmd byte) error {
 	return d.bus.WriteRegister(d.address, CONTROL_CMD_SINGLE, []byte{cmd})
 }
 
 // Display sends the current buffer to the display
 func (d *display) Display() error {
-	seq := []byte{
-		SET_COLUMN_ADDRESS, 0x00, byte(d.width - 1),
-		SET_PAGE_ADDRESS, 0x00, byte((d.height / 8) - 1),
+	// Set addressing window using pre-allocated buffer
+	addrSeq := d.addrBuf[:6]
+	addrSeq[0] = SET_COLUMN_ADDRESS
+	addrSeq[1] = 0x00
+	addrSeq[2] = d.width - 1
+	addrSeq[3] = SET_PAGE_ADDRESS
+	addrSeq[4] = 0x00
+	addrSeq[5] = (d.height / 8) - 1
+
+	// Send addressing commands
+	if err := d.bus.WriteRegister(d.address, CONTROL_CMD_STREAM, addrSeq); err != nil {
+		return err
 	}
 
-	return d.bus.WriteRegister(d.address, CONTROL_CMD_STREAM, seq)
+	// Send display data in chunks to avoid large I2C transactions
+	const chunkSize = 32
+	for i := 0; i < len(d.buffer); i += chunkSize {
+		end := i + chunkSize
+		if end > len(d.buffer) {
+			end = len(d.buffer)
+		}
+
+		if err := d.bus.WriteRegister(d.address, CONTROL_DATA_STREAM, d.buffer[i:end]); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// * ----- Getter methods -----
+// SetPixel sets a pixel at the given coordinates
+func (d *display) SetPixel(x, y uint8, color bool) {
+	if x < 0 || x >= d.width || y < 0 || y >= d.height {
+		return
+	}
 
-// Size returns the display dimensions
-func (d *display) Size() (width, height int16) {
-	return d.width, d.height
+	byteIndex := int(x) + (int(y)/8)*int(d.width)
+	bitMask := uint8(1 << (y & 7))
+
+	if color {
+		d.buffer[byteIndex] |= bitMask
+	} else {
+		d.buffer[byteIndex] &^= bitMask
+	}
 }
 
-// BufferSize returns the size of the display buffer
-func (d *display) BufferSize() int {
-	return len(d.buffer)
-}
+// GetPixel gets the state of a pixel at the given coordinates
+func (d *display) GetPixel(x, y uint8) bool {
+	if x < 0 || x >= d.width || y < 0 || y >= d.height {
+		return false
+	}
 
-// Buffer returns the buffer
-func (d *display) Buffer() []byte {
-	return d.buffer
+	byteIndex := int(x) + (int(y)/8)*int(d.width)
+	bitMask := uint8(1 << (y & 7))
+
+	return d.buffer[byteIndex]&bitMask != 0
 }

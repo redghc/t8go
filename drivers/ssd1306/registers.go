@@ -1,6 +1,6 @@
 package ssd1306
 
-// SSD1306 constants
+// SSD1306 command constants
 const (
 	// 1. Fundamental Command
 	SET_CONTRAST          byte = 0x81
@@ -26,7 +26,6 @@ const (
 	SET_MEMORY_ADDRESSING_MODE byte = 0x20
 	SET_COLUMN_ADDRESS         byte = 0x21
 	SET_PAGE_ADDRESS           byte = 0x22
-	// Pages?
 
 	// 4. Hardware Configuration (Panel resolution & layout related) Command
 	SET_START_LINE                    byte = 0x40

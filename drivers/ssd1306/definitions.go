@@ -1,27 +1,39 @@
 package ssd1306
 
+// I2C addresses for SSD1306 displays
 type AddressMode = byte
 
 const (
-	Address_128_32 AddressMode = 0x3D // I2C address for 128x32 SSD1306
-	Address_128_64 AddressMode = 0x3C // I2C address for 128x64 SSD1306
+	ADDRESS_GND AddressMode = 0x3C // SA0 to GND mode
+	ADDRESS_VCC AddressMode = 0x3D // SA0 to VCC mode
 )
 
 // -----
 
+// VCC modes for SSD1306 displays
 type VCCMode byte
 
 const (
-	// VCC Mode
-	VCC_MODE_EXTERNAL   = 0x01
-	VCC_MODE_SWITCH_CAP = 0x02
+	VCC_EXTERNAL   VCCMode = 0x01 // External VCC
+	VCC_SWITCH_CAP VCCMode = 0x02 // Internal charge pump
 )
 
 // -----
 
+// Command modes for SSD1306
 type CommandMode = byte
 
 const (
-	CONTROL_CMD_SINGLE CommandMode = 0x00 // Control byte for single command (Co byte = 0, D/C# byte = 0)
-	CONTROL_CMD_STREAM CommandMode = 0x40 // Control byte for command stream (Co byte = 0, D/C# byte = 1)
+	CONTROL_CMD_SINGLE  CommandMode = 0x00 // Single command byte
+	CONTROL_CMD_STREAM  CommandMode = 0x40 // Command stream
+	CONTROL_DATA_STREAM CommandMode = 0x40 // Data stream
+)
+
+// -----
+
+// Memory addressing modes
+const (
+	horizontalAddressingMode = 0x00
+	verticalAddressingMode   = 0x01
+	pageAddressingMode       = 0x02
 )
