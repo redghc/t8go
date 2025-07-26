@@ -2,10 +2,13 @@ package t8go
 
 type Display interface {
 	Size() (width, height int16) // Size returns the display dimensions
+	BufferSize() int             // BufferSize returns the size of the display buffer
+	Buffer() []byte              // Buffer returns the buffer
 
+	ClearBuffer()           // ClearBuffer clears the display buffer
+	ClearDisplay()          // ClearDisplay clears the image buffer and display
 	Command(cmd byte) error // Send a command to the display
-
-	Display(buffer []byte) error // Send the current buffer to the display
+	Display() error         // Send the current buffer to the display
 }
 
 // ----------
@@ -18,8 +21,7 @@ type T8Go struct {
 // ----------
 
 func New(display Display) *T8Go {
-	width, height := display.Size()
-	bufferSize := int(width) * int(height) // Calculate buffer size based on display dimensions
+	bufferSize := display.BufferSize()
 
 	return &T8Go{
 		display: display,

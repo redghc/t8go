@@ -6,41 +6,57 @@ import (
 	"github.com/redghc/t8go"
 )
 
+// * ----- Definitions -----s
+
 type displayConfig struct {
+	width   int16
+	height  int16
 	vccMode VCCMode
 }
 
 type display struct {
 	bus     *machine.I2C
 	address AddressMode
-	width   int16
-	height  int16
 
 	vccMode VCCMode // Default: VCC_MODE_EXTERNAL
+
+	width  int16 // Default: 128
+	height int16 // Default: 64
+
+	buffer []byte // Buffer to hold the display data
 }
 
 var _ t8go.Display = &display{}
 
+// * ----- Constructors -----
+
 // NewI2C creates a new SSD1306 display instance using I2C communication
-func NewI2C(bus *machine.I2C, address AddressMode, width, height int16) t8go.Display {
+func NewI2C(bus *machine.I2C, address AddressMode) t8go.Display {
 	return &display{
 		bus:     bus,
 		address: address,
-		width:   width,
-		height:  height,
-		vccMode: VCC_MODE_EXTERNAL, // Default VCC mode
+		vccMode: VCC_MODE_EXTERNAL,
 	}
-}
-
-// Command sends a command byte to the display
-func (d *display) Command(cmd byte) error {
-	return d.bus.WriteRegister(d.address, CONTROL_CMD_SINGLE, []byte{cmd})
 }
 
 // Init initializes the display with the given configuration
 func (d *display) Init(config displayConfig) error {
+	if config.width != 0 {
+		d.width = config.width
+	} else {
+		d.width = 128 // Default width
+	}
+
+	if config.height != 0 {
+		d.height = config.height
+	} else {
+		d.height = 64 // Default height
+	}
+
 	if config.vccMode != 0 {
 		d.vccMode = config.vccMode
+	} else {
+		d.vccMode = VCC_MODE_EXTERNAL // Default VCC mode
 	}
 
 	// --
@@ -79,17 +95,49 @@ func (d *display) Init(config displayConfig) error {
 	return d.bus.WriteRegister(d.address, CONTROL_CMD_STREAM, seq)
 }
 
-// Size returns the display dimensions
-func (d *display) Size() (width, height int16) {
-	return d.width, d.height
+// * ----- Display methods -----
+
+// ClearBuffer clears the display buffer
+func (d *display) ClearBuffer() {
+	for i := 0; i < len(d.buffer); i++ {
+		d.buffer[i] = 0
+	}
+}
+
+// ClearDisplay clears the image buffer and display
+func (d *display) ClearDisplay() {
+	d.ClearBuffer()
+	d.Display()
+}
+
+// Command sends a command byte to the display
+func (d *display) Command(cmd byte) error {
+	return d.bus.WriteRegister(d.address, CONTROL_CMD_SINGLE, []byte{cmd})
 }
 
 // Display sends the current buffer to the display
-func (d *display) Display(buffer []byte) error {
+func (d *display) Display() error {
 	seq := []byte{
 		SET_COLUMN_ADDRESS, 0x00, byte(d.width - 1),
 		SET_PAGE_ADDRESS, 0x00, byte((d.height / 8) - 1),
 	}
 
 	return d.bus.WriteRegister(d.address, CONTROL_CMD_STREAM, seq)
+}
+
+// * ----- Getter methods -----
+
+// Size returns the display dimensions
+func (d *display) Size() (width, height int16) {
+	return d.width, d.height
+}
+
+// BufferSize returns the size of the display buffer
+func (d *display) BufferSize() int {
+	return len(d.buffer)
+}
+
+// Buffer returns the buffer
+func (d *display) Buffer() []byte {
+	return d.buffer
 }
