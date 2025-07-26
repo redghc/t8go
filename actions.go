@@ -44,3 +44,51 @@ func (t *T8Go) DrawLine(x1, y1, x2, y2 uint8) {
 		}
 	}
 }
+
+// DrawBox draws a filled rectangle with the top-left corner at (x, y) and the specified width and height.
+func (t *T8Go) DrawBox(x, y, width, height uint8) {
+	displayWidth, displayHeight := t.Size()
+	if x >= displayWidth || y >= displayHeight || x+width > displayWidth || y+height > displayHeight {
+		return // Out of bounds
+	}
+
+	for i := uint8(0); i < width; i++ {
+		for j := uint8(0); j < height; j++ {
+			t.SetPixel(x+i, y+j, true)
+		}
+	}
+}
+
+// DrawBoxCoords draws a filled rectangle with the top-left corner at (x1, y1) and the bottom-right corner at (x2, y2).
+func (t *T8Go) DrawBoxCoords(x1, y1, x2, y2 uint8) {
+	width, height := t.Size()
+	if x1 >= width || x2 >= width || y1 >= height || y2 >= height {
+		return // Out of bounds
+	}
+
+	for x := x1; x <= x2; x++ {
+		for y := y1; y <= y2; y++ {
+			t.SetPixel(x, y, true)
+		}
+	}
+}
+
+// DrawFrame draws a rectangle outline with the top-left corner at (x, y) and the specified width and height.
+func (t *T8Go) DrawFrame(x, y, width, height uint8) {
+	displayWidth, displayHeight := t.Size()
+	if x >= displayWidth || y >= displayHeight || x+width > displayWidth || y+height > displayHeight {
+		return // Out of bounds
+	}
+
+	// Draw top and bottom edges
+	for i := range width {
+		t.SetPixel(x+i, y, true)          // Top edge
+		t.SetPixel(x+i, y+height-1, true) // Bottom edge
+	}
+
+	// Draw left and right edges
+	for j := range height {
+		t.SetPixel(x, y+j, true)         // Left edge
+		t.SetPixel(x+width-1, y+j, true) // Right edge
+	}
+}
