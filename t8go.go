@@ -4,6 +4,8 @@ type Display interface {
 	Size() (width, height int16) // Size returns the display dimensions
 
 	Command(cmd byte) error // Send a command to the display
+
+	Display(buffer []byte) error // Send the current buffer to the display
 }
 
 // ----------

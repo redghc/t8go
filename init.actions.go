@@ -7,6 +7,13 @@ func (t *T8Go) ClearBuffer() {
 	}
 }
 
+// ClearDisplay clears the image buffer and clear the display
 func (t *T8Go) ClearDisplay() {
-	t.ClearBuffer() // Clear the buffer
+	t.ClearBuffer()
+	t.display.Display(t.buffer)
+}
+
+// SendBuffer sends the buffer to the display
+func (t *T8Go) SendBuffer() error {
+	return t.display.Display(t.buffer)
 }

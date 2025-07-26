@@ -37,6 +37,7 @@ func (d *display) Command(cmd byte) error {
 	return d.bus.WriteRegister(d.address, CONTROL_CMD_SINGLE, []byte{cmd})
 }
 
+// Init initializes the display with the given configuration
 func (d *display) Init(config displayConfig) error {
 	if config.vccMode != 0 {
 		d.vccMode = config.vccMode
@@ -81,4 +82,14 @@ func (d *display) Init(config displayConfig) error {
 // Size returns the display dimensions
 func (d *display) Size() (width, height int16) {
 	return d.width, d.height
+}
+
+// Display sends the current buffer to the display
+func (d *display) Display(buffer []byte) error {
+	seq := []byte{
+		SET_COLUMN_ADDRESS, 0x00, byte(d.width - 1),
+		SET_PAGE_ADDRESS, 0x00, byte((d.height / 8) - 1),
+	}
+
+	return d.bus.WriteRegister(d.address, CONTROL_CMD_STREAM, seq)
 }
