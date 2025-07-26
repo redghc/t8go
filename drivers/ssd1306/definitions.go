@@ -25,7 +25,7 @@ type CommandMode = byte
 
 const (
 	CONTROL_CMD_SINGLE  CommandMode = 0x00 // Single command byte
-	CONTROL_CMD_STREAM  CommandMode = 0x40 // Command stream
+	CONTROL_CMD_STREAM  CommandMode = 0x00 // Command stream
 	CONTROL_DATA_STREAM CommandMode = 0x40 // Data stream
 )
 

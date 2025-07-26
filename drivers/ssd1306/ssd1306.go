@@ -1,7 +1,6 @@
 package ssd1306
 
 import (
-	"errors"
 	"machine"
 
 	"github.com/redghc/t8go"
@@ -21,7 +20,7 @@ type display struct {
 
 	width   uint8   // Default: 128
 	height  uint8   // Default: 64
-	vccMode VCCMode // Default: VCC_EXTERNAL
+	vccMode VCCMode // Default: VCC_SWITCH_CAP
 
 	buffer  []byte
 	bufSize int
@@ -38,7 +37,7 @@ var _ t8go.Display = &display{}
 // NewI2C creates a new SSD1306 display instance using I2C communication
 func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.Display, error) {
 	if bus == nil {
-		return nil, errors.New("I2C bus cannot be nil")
+		return nil, ErrI2CBusNil
 	}
 
 	if config.Width == 0 {
@@ -47,9 +46,8 @@ func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.Display,
 	if config.Height == 0 {
 		config.Height = 64 // Default height
 	}
-	vccMode := config.VCCMode
-	if vccMode == 0 {
-		vccMode = VCC_EXTERNAL
+	if config.VCCMode == 0 {
+		config.VCCMode = VCC_SWITCH_CAP
 	}
 
 	bufferSize := int(config.Width) * int(config.Height) / 8
@@ -59,12 +57,12 @@ func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.Display,
 		address: address,
 		width:   config.Width,
 		height:  config.Height,
-		vccMode: vccMode,
+		vccMode: config.VCCMode,
 		buffer:  make([]byte, bufferSize),
 		bufSize: bufferSize,
 	}
 
-	// Initialize the display immediately
+	// Initialize the display
 	if err := d.init(d.width, d.height); err != nil {
 		return nil, err
 	}
@@ -86,20 +84,30 @@ func (d *display) init(width, height uint8) error {
 		preCharge = 0xF1
 	}
 
+	var comPins uint8
+	if height == 32 {
+		comPins = 0x02
+	} else {
+		comPins = 0x12
+	}
+
 	// Build initialization sequence in pre-allocated buffer
 	cmdSeq := d.cmdBuf[:0]
 	cmdSeq = append(cmdSeq,
 		SET_DISPLAY_OFF,
 		SET_DISPLAY_CLOCK_DIVIDE_RATIO, 0x80,
-		SET_MULTIPLEX_RATIO, 0x3F,
+		SET_MULTIPLEX_RATIO, uint8(height-1),
 		SET_DISPLAY_OFFSET, 0x00,
 		SET_START_LINE|0x00,
 		CHARGE_PUMP_SETTING, chargePump,
 		SET_MEMORY_ADDRESSING_MODE, horizontalAddressingMode,
+
 		SET_SEGMENT_REMAP|0x01,
 		SET_COM_OUTPUT_SCAN_DIRECTION_DEC,
-		SET_COM_PINS, 0x12,
+
+		SET_COM_PINS, comPins,
 		SET_CONTRAST, contrast,
+
 		SET_PRE_CHARGE_PERIOD, preCharge,
 		SET_VCOM_DESELECT_LEVEL, 0x20,
 		DISPLAY_ALL_ON_RESUME,
@@ -164,25 +172,12 @@ func (d *display) Display() error {
 		return err
 	}
 
-	// Send display data in chunks to avoid large I2C transactions
-	const chunkSize = 32
-	for i := 0; i < len(d.buffer); i += chunkSize {
-		end := i + chunkSize
-		if end > len(d.buffer) {
-			end = len(d.buffer)
-		}
-
-		if err := d.bus.WriteRegister(d.address, CONTROL_DATA_STREAM, d.buffer[i:end]); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return d.bus.WriteRegister(d.address, CONTROL_DATA_STREAM, d.buffer)
 }
 
 // SetPixel sets a pixel at the given coordinates
 func (d *display) SetPixel(x, y uint8, color bool) {
-	if x < 0 || x >= d.width || y < 0 || y >= d.height {
+	if x >= d.width || y >= d.height {
 		return
 	}
 
@@ -198,7 +193,7 @@ func (d *display) SetPixel(x, y uint8, color bool) {
 
 // GetPixel gets the state of a pixel at the given coordinates
 func (d *display) GetPixel(x, y uint8) bool {
-	if x < 0 || x >= d.width || y < 0 || y >= d.height {
+	if x >= d.width || y >= d.height {
 		return false
 	}
 
