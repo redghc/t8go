@@ -154,7 +154,7 @@ func (t *T8Go) DrawCircle(x0, y0, rad uint8, options []DrawQuadrants) {
 func (t *T8Go) drawCircleSection(x, y, x0, y0 int16, options []DrawQuadrants) {
 	draw := func(x, y int16) {
 		if x >= 0 && y >= 0 && x < 128 && y < 64 {
-			t.DrawPixel(uint8(x), uint8(y))
+			t.DrawPixel(x, y)
 		}
 	}
 
