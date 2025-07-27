@@ -121,9 +121,9 @@ func (d *display) init(width, height uint8) error {
 
 // * ----- Getter methods -----
 
-// Size returns the display dimensions as uint8 for interface compatibility
-func (d *display) Size() (width, height uint8) {
-	return d.width, d.height
+// Size returns the display dimensions as uint16 for interface compatibility
+func (d *display) Size() (width, height uint16) {
+	return uint16(d.width), uint16(d.height)
 }
 
 // BufferSize returns the size of the display buffer
@@ -176,8 +176,8 @@ func (d *display) Display() error {
 }
 
 // SetPixel sets a pixel at the given coordinates
-func (d *display) SetPixel(x, y uint8, color bool) {
-	if x >= d.width || y >= d.height {
+func (d *display) SetPixel(x, y int16, color bool) {
+	if x < 0 || y < 0 || x >= int16(d.width) || y >= int16(d.height) {
 		return
 	}
 

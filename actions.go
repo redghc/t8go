@@ -3,94 +3,111 @@ package t8go
 import "github.com/redghc/t8go/helpers"
 
 // DrawPixel sets a pixel at the specified coordinates (x, y) in the display buffer.
-func (t *T8Go) DrawPixel(x, y uint8) {
+func (t *T8Go) DrawPixel(x, y int16) {
 	t.SetPixel(x, y, true)
 }
 
 // DrawLine draws a line between two points (x1, y1) and (x2, y2) using Bresenham's algorithm to the display buffer.
-func (t *T8Go) DrawLine(x1, y1, x2, y2 uint8) {
-	width, height := t.Size()
-	if x1 >= width || x2 >= width || y1 >= height || y2 >= height {
-		return // Out of bounds
+func (t *T8Go) DrawLine(x1, y1, x2, y2 int16) {
+	swapXY := false
+	if helpers.AbsDiff(y2, y1) > helpers.AbsDiff(x2, x1) {
+		x1, y1 = y1, x1
+		x2, y2 = y2, x2
+		swapXY = true
 	}
 
-	x, y := int(x1), int(y1)
-	distanceX, distanceY := int(x2)-x, int(y2)-y
-	directionX, directionY := helpers.Direction(distanceX), helpers.Direction(distanceY)
-	absDx, absDy := helpers.Abs(distanceX), helpers.Abs(distanceY)
+	if x1 > x2 {
+		x1, x2 = x2, x1
+		y1, y2 = y2, y1
+	}
 
-	var accumulatedError int
-	if absDx > absDy {
-		accumulatedError = absDx / 2
-		for i := 0; i <= absDx; i++ {
-			t.SetPixel(uint8(x), uint8(y), true)
-			x += directionX
-			accumulatedError -= absDy
-			if accumulatedError < 0 {
-				y += directionY
-				accumulatedError += absDx
-			}
+	deltaX := x2 - x1
+	deltaY := y2 - y1
+	accumulatedError := deltaX / 2
+	var yStep int16 = 1
+	if y2 < y1 {
+		yStep = -1
+	}
+	y := y1
+
+	for x := x1; x <= x2; x++ {
+		if swapXY {
+			t.SetPixel(y, x, true)
+		} else {
+			t.SetPixel(x, y, true)
 		}
-	} else {
-		accumulatedError := absDy / 2
-		for i := 0; i <= absDy; i++ {
-			t.SetPixel(uint8(x), uint8(y), true)
-			y += directionY
-			accumulatedError -= absDx
-			if accumulatedError < 0 {
-				x += directionX
-				accumulatedError += absDy
-			}
+		accumulatedError -= helpers.Abs16(deltaY)
+		if accumulatedError < 0 {
+			y += yStep
+			accumulatedError += deltaX
 		}
 	}
 }
 
 // DrawBox draws a filled rectangle with the top-left corner at (x, y) and the specified width and height.
-func (t *T8Go) DrawBox(x, y, width, height uint8) {
-	displayWidth, displayHeight := t.Size()
-	if x >= displayWidth || y >= displayHeight || x+width > displayWidth || y+height > displayHeight {
-		return // Out of bounds
+func (t *T8Go) DrawBox(x, y, width, height int16) {
+	if width <= 0 || height <= 0 {
+		return
 	}
 
-	for i := uint8(0); i < width; i++ {
-		for j := uint8(0); j < height; j++ {
-			t.SetPixel(x+i, y+j, true)
+	for j := int16(0); j < height; j++ {
+		offsetY := y + j
+		for i := int16(0); i < width; i++ {
+			t.SetPixel(x+i, offsetY, true)
 		}
 	}
 }
 
 // DrawBoxCoords draws a filled rectangle with the top-left corner at (x1, y1) and the bottom-right corner at (x2, y2).
-func (t *T8Go) DrawBoxCoords(x1, y1, x2, y2 uint8) {
-	width, height := t.Size()
-	if x1 >= width || x2 >= width || y1 >= height || y2 >= height {
-		return // Out of bounds
+func (t *T8Go) DrawBoxCoords(x1, y1, x2, y2 int16) {
+	if x2 < x1 {
+		x1, x2 = x2, x1
+	}
+	if y2 < y1 {
+		y1, y2 = y2, y1
 	}
 
-	for x := x1; x <= x2; x++ {
-		for y := y1; y <= y2; y++ {
-			t.SetPixel(x, y, true)
-		}
-	}
+	width := x2 - x1 + 1
+	height := y2 - y1 + 1
+
+	t.DrawBox(x1, y1, width, height)
 }
 
 // DrawFrame draws a rectangle outline with the top-left corner at (x, y) and the specified width and height.
-func (t *T8Go) DrawFrame(x, y, width, height uint8) {
-	displayWidth, displayHeight := t.Size()
-	if x >= displayWidth || y >= displayHeight || x+width > displayWidth || y+height > displayHeight {
-		return // Out of bounds
+func (t *T8Go) DrawFrame(x, y, width, height int16) {
+	if width <= 1 || height <= 1 {
+		return
 	}
 
-	// Draw top and bottom edges
-	for i := range width {
-		t.SetPixel(x+i, y, true)          // Top edge
-		t.SetPixel(x+i, y+height-1, true) // Bottom edge
+	right := x + width - 1
+	bottom := y + height - 1
+
+	// Top and bottom edges
+	for i := x; i <= right; i++ {
+		t.SetPixel(i, y, true)
+		t.SetPixel(i, bottom, true)
 	}
 
-	// Draw left and right edges
-	for j := range height {
-		t.SetPixel(x, y+j, true)         // Left edge
-		t.SetPixel(x+width-1, y+j, true) // Right edge
+	// Draw left and right edges, excluding corners already drawn
+	for j := y + 1; j < bottom; j++ {
+		t.SetPixel(x, j, true)
+		t.SetPixel(right, j, true)
 	}
+}
+
+// DrawFrameCoords draws a rectangle outline with the top-left corner at (x1, y1) and the bottom-right corner at (x2, y2).
+func (t *T8Go) DrawFrameCoords(x1, y1, x2, y2 int16) {
+	if x2 < x1 {
+		x1, x2 = x2, x1
+	}
+	if y2 < y1 {
+		y1, y2 = y2, y1
+	}
+
+	width := x2 - x1 + 1
+	height := y2 - y1 + 1
+
+	t.DrawFrame(x1, y1, width, height)
 }
 
 type DrawQuadrants int

@@ -1,15 +1,15 @@
 package t8go
 
 type Display interface {
-	Size() (width, height uint8) // Size returns the display dimensions
-	BufferSize() int             // BufferSize returns the size of the display buffer
-	Buffer() []byte              // Buffer returns the buffer
+	Size() (width, height uint16) // Size returns the display dimensions
+	BufferSize() int              // BufferSize returns the size of the display buffer
+	Buffer() []byte               // Buffer returns the buffer
 
 	ClearBuffer()                 // ClearBuffer clears the display buffer
 	ClearDisplay()                // ClearDisplay clears the image buffer and display
 	Command(cmd byte) error       // Send a command to the display
 	Display() error               // Send the current buffer to the display
-	SetPixel(x, y uint8, on bool) // SetPixel sets a pixel at (x, y) to on/off
+	SetPixel(x, y int16, on bool) // SetPixel sets a pixel at (x, y) to on/off
 	GetPixel(x, y uint8) bool     // GetPixel returns the state of a pixel at (x, y)
 }
 
@@ -37,7 +37,7 @@ func (t *T8Go) GetDisplay() Display {
 }
 
 // Size returns the display dimensions
-func (t *T8Go) Size() (width, height uint8) {
+func (t *T8Go) Size() (width, height uint16) {
 	return t.display.Size()
 }
 
@@ -65,7 +65,7 @@ func (t *T8Go) Display() error {
 	return t.display.Display()
 }
 
-func (t *T8Go) SetPixel(x, y uint8, on bool) {
+func (t *T8Go) SetPixel(x, y int16, on bool) {
 	t.display.SetPixel(x, y, on)
 }
 
