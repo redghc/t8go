@@ -137,58 +137,60 @@ func (t *T8Go) DrawFrameCoords(startX, startY, endX, endY int16) {
 	t.DrawFrame(startX, startY, width, height)
 }
 
-// DrawCircle draws a outlined circle with center at (x0, y0) and specified radius.
+// DrawCircle draws an outlined circle centered at (centerX, centerY) with the given radius.
 // The diameter of the circle is 2*radius + 1.
-// The options parameter allows drawing specific sections of the circle.
-// If options is empty or contains DRAW_FULL, the entire circle is drawn.
-func (t *T8Go) DrawCircle(x0, y0, rad int16, options []DrawQuadrants) {
-	f := int16(1 - rad)
-	ddF_x := int16(1)
-	ddF_y := -2 * rad
-	x := int16(0)
-	y := rad
+// The quadrants parameter determines which sections of the circle are drawn.
+// If quadrants is empty or includes DRAW_FULL, the entire circle is rendered.
+func (t *T8Go) DrawCircle(centerX, centerY, radius int16, quadrants []DrawQuadrants) {
+	decision := int16(1 - radius)
+	deltaX := int16(1)
+	deltaY := int16(-2 * radius)
+	circleX := int16(0)
+	circleY := radius
 
-	t.drawCircleSection(x, y, x0, y0, options)
+	t.drawCircleSection(circleX, circleY, centerX, centerY, quadrants)
 
-	for x < y {
-		if f >= 0 {
-			y--
-			ddF_y += 2
-			f += ddF_y
+	for circleX < circleY {
+		if decision >= 0 {
+			circleY--
+			deltaY += 2
+			decision += deltaY
 		}
-		x++
-		ddF_x += 2
-		f += ddF_x
+		circleX++
+		deltaX += 2
+		decision += deltaX
 
-		t.drawCircleSection(x, y, x0, y0, options)
+		t.drawCircleSection(circleX, circleY, centerX, centerY, quadrants)
 	}
 }
 
-func (t *T8Go) drawCircleSection(x, y, x0, y0 int16, options []DrawQuadrants) {
-	if shouldDraw(options, DRAW_TOP_RIGHT) {
-		t.drawArcPixel(x0+x, y0-y)
-		t.drawArcPixel(x0+y, y0-x)
+// drawCircleSection draws the selected circle segments based on quadrant flags.
+func (t *T8Go) drawCircleSection(offsetX, offsetY, centerX, centerY int16, quadrants []DrawQuadrants) {
+	if t.shouldDraw(quadrants, DRAW_TOP_RIGHT) {
+		t.DrawPixel(centerX+offsetX, centerY-offsetY)
+		t.DrawPixel(centerX+offsetY, centerY-offsetX)
 	}
-	if shouldDraw(options, DRAW_TOP_LEFT) {
-		t.drawArcPixel(x0-x, y0-y)
-		t.drawArcPixel(x0-y, y0-x)
+	if t.shouldDraw(quadrants, DRAW_TOP_LEFT) {
+		t.DrawPixel(centerX-offsetX, centerY-offsetY)
+		t.DrawPixel(centerX-offsetY, centerY-offsetX)
 	}
-	if shouldDraw(options, DRAW_BOTTOM_RIGHT) {
-		t.drawArcPixel(x0+x, y0+y)
-		t.drawArcPixel(x0+y, y0+x)
+	if t.shouldDraw(quadrants, DRAW_BOTTOM_RIGHT) {
+		t.DrawPixel(centerX+offsetX, centerY+offsetY)
+		t.DrawPixel(centerX+offsetY, centerY+offsetX)
 	}
-	if shouldDraw(options, DRAW_BOTTOM_LEFT) {
-		t.drawArcPixel(x0-x, y0+y)
-		t.drawArcPixel(x0-y, y0+x)
+	if t.shouldDraw(quadrants, DRAW_BOTTOM_LEFT) {
+		t.DrawPixel(centerX-offsetX, centerY+offsetY)
+		t.DrawPixel(centerX-offsetY, centerY+offsetX)
 	}
 }
 
-func shouldDraw(options []DrawQuadrants, section DrawQuadrants) bool {
-	if len(options) == 0 {
+// shouldDraw returns true if a specific quadrant should be drawn.
+func (t *T8Go) shouldDraw(quadrants []DrawQuadrants, section DrawQuadrants) bool {
+	if len(quadrants) == 0 {
 		return section == DRAW_FULL
 	}
-	for _, opt := range options {
-		if opt == DRAW_FULL || opt == section {
+	for _, option := range quadrants {
+		if option == DRAW_FULL || option == section {
 			return true
 		}
 	}
@@ -231,28 +233,28 @@ func (t *T8Go) DrawArc(x0, y0, rad int16, start, end uint8) {
 
 		// Fill the pixels of the 8 sections of the circle, but only on the arc defined by the angles (start and end)
 		if full || ((ratio >= uint32(aStart) && ratio < uint32(aEnd)) != inverted) {
-			t.drawArcPixel(x0+y, y0-x)
+			t.DrawPixel(x0+y, y0-x)
 		}
 		if full || (((ratio+uint32(aEnd)) > 63 && (ratio+uint32(aStart)) <= 63) != inverted) {
-			t.drawArcPixel(x0+x, y0-y)
+			t.DrawPixel(x0+x, y0-y)
 		}
 		if full || (((ratio+64) >= uint32(aStart) && (ratio+64) < uint32(aEnd)) != inverted) {
-			t.drawArcPixel(x0-x, y0-y)
+			t.DrawPixel(x0-x, y0-y)
 		}
 		if full || (((ratio+uint32(aEnd)) > 127 && (ratio+uint32(aStart)) <= 127) != inverted) {
-			t.drawArcPixel(x0-y, y0-x)
+			t.DrawPixel(x0-y, y0-x)
 		}
 		if full || (((ratio+128) >= uint32(aStart) && (ratio+128) < uint32(aEnd)) != inverted) {
-			t.drawArcPixel(x0-y, y0+x)
+			t.DrawPixel(x0-y, y0+x)
 		}
 		if full || (((ratio+uint32(aEnd)) > 191 && (ratio+uint32(aStart)) <= 191) != inverted) {
-			t.drawArcPixel(x0-x, y0+y)
+			t.DrawPixel(x0-x, y0+y)
 		}
 		if full || (((ratio+192) >= uint32(aStart) && (ratio+192) < uint32(aEnd)) != inverted) {
-			t.drawArcPixel(x0+x, y0+y)
+			t.DrawPixel(x0+x, y0+y)
 		}
 		if full || (((ratio+uint32(aEnd)) > 255 && (ratio+uint32(aStart)) <= 255) != inverted) {
-			t.drawArcPixel(x0+y, y0+x)
+			t.DrawPixel(x0+y, y0+x)
 		}
 
 		// Run Andres circle algorithm to get to the next pixel
@@ -267,13 +269,6 @@ func (t *T8Go) DrawArc(x0, y0, rad int16, start, end uint8) {
 			y = y - 1
 			x = x + 1
 		}
-	}
-}
-
-// drawArcPixel draws a pixel if it's within the display bounds
-func (t *T8Go) drawArcPixel(x, y int16) {
-	if x >= 0 && y >= 0 && x < 128 && y < 64 {
-		t.DrawPixel(x, y)
 	}
 }
 
@@ -305,25 +300,25 @@ func (t *T8Go) DrawDisc(x0, y0, rad int16, options []DrawQuadrants) {
 
 func (t *T8Go) drawDiscSection(x, y, x0, y0 int16, options []DrawQuadrants) {
 	// Upper right
-	if shouldDraw(options, DRAW_TOP_RIGHT) {
+	if t.shouldDraw(options, DRAW_TOP_RIGHT) {
 		t.DrawVLine(x0+x, y0-y, y+1)
 		t.DrawVLine(x0+y, y0-x, x+1)
 	}
 
 	// Upper left
-	if shouldDraw(options, DRAW_TOP_LEFT) {
+	if t.shouldDraw(options, DRAW_TOP_LEFT) {
 		t.DrawVLine(x0-x, y0-y, y+1)
 		t.DrawVLine(x0-y, y0-x, x+1)
 	}
 
 	// Lower right
-	if shouldDraw(options, DRAW_BOTTOM_RIGHT) {
+	if t.shouldDraw(options, DRAW_BOTTOM_RIGHT) {
 		t.DrawVLine(x0+x, y0, y+1)
 		t.DrawVLine(x0+y, y0, x+1)
 	}
 
 	// Lower left
-	if shouldDraw(options, DRAW_BOTTOM_LEFT) {
+	if t.shouldDraw(options, DRAW_BOTTOM_LEFT) {
 		t.DrawVLine(x0-x, y0, y+1)
 		t.DrawVLine(x0-y, y0, x+1)
 	}
