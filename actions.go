@@ -52,17 +52,37 @@ func (t *T8Go) DrawLine(startX, startY, endX, endY int16) {
 	}
 }
 
-// DrawBox draws a filled rectangle starting from the top-left corner (startX, startY)
+// DrawVLine draws a vertical line starting from (originX, originY) with the given length.
+func (t *T8Go) DrawVLine(originX, originY, length int16) {
+	if length <= 0 {
+		return
+	}
+
+	for offsetY := range length {
+		t.SetPixel(originX, originY+offsetY, true)
+	}
+}
+
+// DrawHLine draws a horizontal line starting from (startX, startY) with the given length.
+func (t *T8Go) DrawHLine(startX, startY, length int16) {
+	if length <= 0 {
+		return
+	}
+
+	for offsetX := range length {
+		t.SetPixel(startX+offsetX, startY, true)
+	}
+}
+
+// DrawBox draws a filled rectangle starting from the top-left corner (originX, originY)
 // with the specified dimensions: width and height.
-func (t *T8Go) DrawBox(startX, startY, width, height int16) {
+func (t *T8Go) DrawBox(originX, originY, width, height int16) {
 	if width <= 0 || height <= 0 {
 		return
 	}
 
 	for offsetY := range height {
-		for offsetX := range width {
-			t.SetPixel(startX+offsetX, startY+offsetY, true)
-		}
+		t.DrawHLine(originX, originY+offsetY, width)
 	}
 }
 
@@ -82,41 +102,39 @@ func (t *T8Go) DrawBoxCoords(startX, startY, endX, endY int16) {
 	t.DrawBox(startX, startY, width, height)
 }
 
-// DrawFrame draws a rectangle outline with the top-left corner at (x, y) and the specified width and height.
-func (t *T8Go) DrawFrame(x, y, width, height int16) {
+// DrawFrame draws a rectangular outline starting from the top-left corner (originX, originY)
+// with the specified width and height. Must be at least 2x2 to form a valid frame.
+func (t *T8Go) DrawFrame(originX, originY, width, height int16) {
 	if width <= 1 || height <= 1 {
 		return
 	}
 
-	right := x + width - 1
-	bottom := y + height - 1
+	maxX := originX + width - 1
+	maxY := originY + height - 1
 
-	// Top and bottom edges
-	for i := x; i <= right; i++ {
-		t.SetPixel(i, y, true)
-		t.SetPixel(i, bottom, true)
-	}
+	// Top and bottom horizontal edges
+	t.DrawHLine(originX, originY, width)
+	t.DrawHLine(originX, maxY, width)
 
-	// Draw left and right edges, excluding corners already drawn
-	for j := y + 1; j < bottom; j++ {
-		t.SetPixel(x, j, true)
-		t.SetPixel(right, j, true)
-	}
+	// Left and right vertical edges (excluding corners already drawn)
+	t.DrawVLine(originX, originY+1, height-2)
+	t.DrawVLine(maxX, originY+1, height-2)
 }
 
-// DrawFrameCoords draws a rectangle outline with the top-left corner at (x1, y1) and the bottom-right corner at (x2, y2).
-func (t *T8Go) DrawFrameCoords(x1, y1, x2, y2 int16) {
-	if x2 < x1 {
-		x1, x2 = x2, x1
+// DrawFrameCoords draws a rectangular outline starting from the top-left corner (startX, startY)
+// and bottom-right (endX, endY), inclusive.
+func (t *T8Go) DrawFrameCoords(startX, startY, endX, endY int16) {
+	if endX < startX {
+		startX, endX = endX, startX
 	}
-	if y2 < y1 {
-		y1, y2 = y2, y1
+	if endY < startY {
+		startY, endY = endY, startY
 	}
 
-	width := x2 - x1 + 1
-	height := y2 - y1 + 1
+	width := endX - startX + 1
+	height := endY - startY + 1
 
-	t.DrawFrame(x1, y1, width, height)
+	t.DrawFrame(startX, startY, width, height)
 }
 
 // DrawCircle draws a outlined circle with center at (x0, y0) and specified radius.
@@ -256,16 +274,6 @@ func (t *T8Go) DrawArc(x0, y0, rad int16, start, end uint8) {
 func (t *T8Go) drawArcPixel(x, y int16) {
 	if x >= 0 && y >= 0 && x < 128 && y < 64 {
 		t.DrawPixel(x, y)
-	}
-}
-
-// DrawVLine draws a vertical line starting at (x, y) with the specified length.
-func (t *T8Go) DrawVLine(x, y, length int16) {
-	if length <= 0 {
-		return
-	}
-	for i := int16(0); i < length; i++ {
-		t.SetPixel(x, y+i, true)
 	}
 }
 
