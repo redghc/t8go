@@ -7,39 +7,47 @@ func (t *T8Go) DrawPixel(x, y int16) {
 	t.SetPixel(x, y, true)
 }
 
-// DrawLine draws a line between two points (x1, y1) and (x2, y2) using Bresenham's algorithm to the display buffer.
-func (t *T8Go) DrawLine(x1, y1, x2, y2 int16) {
+// DrawLine draws a line between two points (startX, startY) and (endX, endY)
+// using Bresenham's algorithm. The result is rendered into the display buffer.
+func (t *T8Go) DrawLine(startX, startY, endX, endY int16) {
 	swapXY := false
-	if helpers.AbsDiff(y2, y1) > helpers.AbsDiff(x2, x1) {
-		x1, y1 = y1, x1
-		x2, y2 = y2, x2
+
+	// Determine if the line is steep (more vertical than horizontal).
+	if helpers.AbsDiff(endY, startY) > helpers.AbsDiff(endX, startX) {
+		startX, startY = startY, startX
+		endX, endY = endY, endX
 		swapXY = true
 	}
 
-	if x1 > x2 {
-		x1, x2 = x2, x1
-		y1, y2 = y2, y1
+	// ? Always draw from left to right
+	if startX > endX {
+		startX, endX = endX, startX
+		startY, endY = endY, startY
 	}
 
-	deltaX := x2 - x1
-	deltaY := y2 - y1
-	accumulatedError := deltaX / 2
-	var yStep int16 = 1
-	if y2 < y1 {
+	deltaX := endX - startX
+	deltaY := endY - startY
+	errorAccumulator := deltaX / 2
+
+	// ? Determine Y direction
+	yStep := int16(1)
+	if endY < startY {
 		yStep = -1
 	}
-	y := y1
 
-	for x := x1; x <= x2; x++ {
+	currentY := startY
+
+	for currentX := startX; currentX <= endX; currentX++ {
 		if swapXY {
-			t.SetPixel(y, x, true)
+			t.SetPixel(currentY, currentX, true)
 		} else {
-			t.SetPixel(x, y, true)
+			t.SetPixel(currentX, currentY, true)
 		}
-		accumulatedError -= helpers.Abs16(deltaY)
-		if accumulatedError < 0 {
-			y += yStep
-			accumulatedError += deltaX
+
+		errorAccumulator -= helpers.Abs16(deltaY)
+		if errorAccumulator < 0 {
+			currentY += yStep
+			errorAccumulator += deltaX
 		}
 	}
 }
@@ -110,7 +118,7 @@ func (t *T8Go) DrawFrameCoords(x1, y1, x2, y2 int16) {
 	t.DrawFrame(x1, y1, width, height)
 }
 
-// DrawCircle draws a filled circle with center at (x0, y0) and specified radius.
+// DrawCircle draws a outlined circle with center at (x0, y0) and specified radius.
 // The diameter of the circle is 2*radius + 1.
 // The options parameter allows drawing specific sections of the circle.
 // If options is empty or contains DRAW_FULL, the entire circle is drawn.
@@ -168,7 +176,7 @@ func shouldDraw(options []DrawQuadrants, section DrawQuadrants) bool {
 	return false
 }
 
-// DrawArc draws an arc with center at (x0, y0), specified radius, and angular range from start to end.
+// DrawArc draws an outlined arc with center at (x0, y0), specified radius, and angular range from start to end.
 // The start and end angles are specified as values from 0 to 255, where:
 // - 0 represents 0 degrees (right)
 // - 64 represents 90 degrees (up)
@@ -247,5 +255,67 @@ func (t *T8Go) DrawArc(x0, y0, rad int16, start, end uint8) {
 func (t *T8Go) drawArcPixel(x, y int16) {
 	if x >= 0 && y >= 0 && x < 128 && y < 64 {
 		t.DrawPixel(x, y)
+	}
+}
+
+// DrawVLine draws a vertical line starting at (x, y) with the specified length.
+func (t *T8Go) DrawVLine(x, y, length int16) {
+	if length <= 0 {
+		return
+	}
+	for i := int16(0); i < length; i++ {
+		t.SetPixel(x, y+i, true)
+	}
+}
+
+// DrawDisc draws a filled circle (disc) with center at (x0, y0) and specified radius.
+// The options parameter allows drawing specific sections of the disc.
+// If options is empty or contains DRAW_FULL, the entire disc is drawn.
+func (t *T8Go) DrawDisc(x0, y0, rad int16, options []DrawQuadrants) {
+	f := int16(1 - rad)
+	ddF_x := int16(1)
+	ddF_y := -2 * rad
+	x := int16(0)
+	y := rad
+
+	t.drawDiscSection(x, y, x0, y0, options)
+
+	for x < y {
+		if f >= 0 {
+			y--
+			ddF_y += 2
+			f += ddF_y
+		}
+		x++
+		ddF_x += 2
+		f += ddF_x
+
+		t.drawDiscSection(x, y, x0, y0, options)
+	}
+}
+
+func (t *T8Go) drawDiscSection(x, y, x0, y0 int16, options []DrawQuadrants) {
+	// Upper right
+	if shouldDraw(options, DRAW_TOP_RIGHT) {
+		t.DrawVLine(x0+x, y0-y, y+1)
+		t.DrawVLine(x0+y, y0-x, x+1)
+	}
+
+	// Upper left
+	if shouldDraw(options, DRAW_TOP_LEFT) {
+		t.DrawVLine(x0-x, y0-y, y+1)
+		t.DrawVLine(x0-y, y0-x, x+1)
+	}
+
+	// Lower right
+	if shouldDraw(options, DRAW_BOTTOM_RIGHT) {
+		t.DrawVLine(x0+x, y0, y+1)
+		t.DrawVLine(x0+y, y0, x+1)
+	}
+
+	// Lower left
+	if shouldDraw(options, DRAW_BOTTOM_LEFT) {
+		t.DrawVLine(x0-x, y0, y+1)
+		t.DrawVLine(x0-y, y0, x+1)
 	}
 }
