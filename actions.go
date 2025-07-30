@@ -52,32 +52,34 @@ func (t *T8Go) DrawLine(startX, startY, endX, endY int16) {
 	}
 }
 
-// DrawBox draws a filled rectangle with the top-left corner at (x, y) and the specified width and height.
-func (t *T8Go) DrawBox(x, y, width, height int16) {
+// DrawBox draws a filled rectangle starting from the top-left corner (startX, startY)
+// with the specified dimensions: width and height.
+func (t *T8Go) DrawBox(startX, startY, width, height int16) {
 	if width <= 0 || height <= 0 {
 		return
 	}
 
-	for deltaY := range height {
-		for deltaX := range width {
-			t.SetPixel(x+deltaX, y+deltaY, true)
+	for offsetY := range height {
+		for offsetX := range width {
+			t.SetPixel(startX+offsetX, startY+offsetY, true)
 		}
 	}
 }
 
-// DrawBoxCoords draws a filled rectangle with the top-left corner at (x1, y1) and the bottom-right corner at (x2, y2).
-func (t *T8Go) DrawBoxCoords(x1, y1, x2, y2 int16) {
-	if x2 < x1 {
-		x1, x2 = x2, x1
+// DrawBoxCoords draws a filled rectangle between two corners: top-left (startX, startY)
+// and bottom-right (endX, endY), inclusive.
+func (t *T8Go) DrawBoxCoords(startX, startY, endX, endY int16) {
+	if endX < startX {
+		startX, endX = endX, startX
 	}
-	if y2 < y1 {
-		y1, y2 = y2, y1
+	if endY < startY {
+		startY, endY = endY, startY
 	}
 
-	width := x2 - x1 + 1
-	height := y2 - y1 + 1
+	width := endX - startX + 1
+	height := endY - startY + 1
 
-	t.DrawBox(x1, y1, width, height)
+	t.DrawBox(startX, startY, width, height)
 }
 
 // DrawFrame draws a rectangle outline with the top-left corner at (x, y) and the specified width and height.
