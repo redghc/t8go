@@ -197,129 +197,117 @@ func (t *T8Go) shouldDraw(quadrants []DrawQuadrants, section DrawQuadrants) bool
 	return false
 }
 
-// DrawArc draws an outlined arc with center at (x0, y0), specified radius, and angular range from start to end.
-// The start and end angles are specified as values from 0 to 255, where:
-// - 0 represents 0 degrees (right)
-// - 64 represents 90 degrees (up)
-// - 128 represents 180 degrees (left)
-// - 192 represents 270 degrees (down)
-// - 255 represents 360 degrees (full circle)
-func (t *T8Go) DrawArc(x0, y0, rad int16, start, end uint8) {
-	// Manage angle inputs
-	full := (start == end)
-	inverted := (start > end)
-	var aStart, aEnd uint8
-	if inverted {
-		aStart = end
-		aEnd = start
+// DrawArc draws an outlined arc centered at (centerX, centerY) with the given radius,
+// starting from angleStart to angleEnd. Angles range from 0 to 255 where:
+// 0   = 0° (right)
+// 64  = 90° (up)
+// 128 = 180° (left)
+// 192 = 270° (down)
+// 255 = 360° (full circle)
+func (t *T8Go) DrawArc(centerX, centerY, radius int16, angleStart, angleEnd uint8) {
+	isFullArc := (angleStart == angleEnd)
+	isInvertedRange := (angleStart > angleEnd)
+
+	var rangeStart, rangeEnd uint8
+	if isInvertedRange {
+		rangeStart = angleEnd
+		rangeEnd = angleStart
 	} else {
-		aStart = start
-		aEnd = end
+		rangeStart = angleStart
+		rangeEnd = angleEnd
 	}
 
-	// Initialize variables
 	x := int16(0)
-	y := int16(rad)
-	d := int16(rad) - 1
+	y := radius
+	decision := radius - 1
 
-	// Trace arc radius with the Andres circle algorithm (process each pixel of a 1/8th circle of radius rad)
 	for y >= x {
-		// Get the percentage of 1/8th circle drawn with a fast approximation of arctan(x/y)
-		var ratio uint32
+		var angleRatio uint32
 		if y != 0 {
-			ratio = uint32(x) * 255 / uint32(y)                          // x/y [0..255]
-			ratio = ratio * (770195 - (ratio-255)*(ratio+941)) / 6137491 // arctan(x/y) [0..32]
+			angleRatio = uint32(x) * 255 / uint32(y)
+			angleRatio = angleRatio * (770195 - (angleRatio-255)*(angleRatio+941)) / 6137491
 		}
 
-		// Fill the pixels of the 8 sections of the circle, but only on the arc defined by the angles (start and end)
-		if full || ((ratio >= uint32(aStart) && ratio < uint32(aEnd)) != inverted) {
-			t.DrawPixel(x0+y, y0-x)
+		if isFullArc || ((angleRatio >= uint32(rangeStart) && angleRatio < uint32(rangeEnd)) != isInvertedRange) {
+			t.DrawPixel(centerX+y, centerY-x)
 		}
-		if full || (((ratio+uint32(aEnd)) > 63 && (ratio+uint32(aStart)) <= 63) != inverted) {
-			t.DrawPixel(x0+x, y0-y)
+		if isFullArc || (((angleRatio+uint32(rangeEnd)) > 63 && (angleRatio+uint32(rangeStart)) <= 63) != isInvertedRange) {
+			t.DrawPixel(centerX+x, centerY-y)
 		}
-		if full || (((ratio+64) >= uint32(aStart) && (ratio+64) < uint32(aEnd)) != inverted) {
-			t.DrawPixel(x0-x, y0-y)
+		if isFullArc || (((angleRatio+64) >= uint32(rangeStart) && (angleRatio+64) < uint32(rangeEnd)) != isInvertedRange) {
+			t.DrawPixel(centerX-x, centerY-y)
 		}
-		if full || (((ratio+uint32(aEnd)) > 127 && (ratio+uint32(aStart)) <= 127) != inverted) {
-			t.DrawPixel(x0-y, y0-x)
+		if isFullArc || (((angleRatio+uint32(rangeEnd)) > 127 && (angleRatio+uint32(rangeStart)) <= 127) != isInvertedRange) {
+			t.DrawPixel(centerX-y, centerY-x)
 		}
-		if full || (((ratio+128) >= uint32(aStart) && (ratio+128) < uint32(aEnd)) != inverted) {
-			t.DrawPixel(x0-y, y0+x)
+		if isFullArc || (((angleRatio+128) >= uint32(rangeStart) && (angleRatio+128) < uint32(rangeEnd)) != isInvertedRange) {
+			t.DrawPixel(centerX-y, centerY+x)
 		}
-		if full || (((ratio+uint32(aEnd)) > 191 && (ratio+uint32(aStart)) <= 191) != inverted) {
-			t.DrawPixel(x0-x, y0+y)
+		if isFullArc || (((angleRatio+uint32(rangeEnd)) > 191 && (angleRatio+uint32(rangeStart)) <= 191) != isInvertedRange) {
+			t.DrawPixel(centerX-x, centerY+y)
 		}
-		if full || (((ratio+192) >= uint32(aStart) && (ratio+192) < uint32(aEnd)) != inverted) {
-			t.DrawPixel(x0+x, y0+y)
+		if isFullArc || (((angleRatio+192) >= uint32(rangeStart) && (angleRatio+192) < uint32(rangeEnd)) != isInvertedRange) {
+			t.DrawPixel(centerX+x, centerY+y)
 		}
-		if full || (((ratio+uint32(aEnd)) > 255 && (ratio+uint32(aStart)) <= 255) != inverted) {
-			t.DrawPixel(x0+y, y0+x)
+		if isFullArc || (((angleRatio+uint32(rangeEnd)) > 255 && (angleRatio+uint32(rangeStart)) <= 255) != isInvertedRange) {
+			t.DrawPixel(centerX+y, centerY+x)
 		}
 
-		// Run Andres circle algorithm to get to the next pixel
-		if d >= 2*x {
-			d = d - 2*x - 1
-			x = x + 1
-		} else if d < 2*(int16(rad)-y) {
-			d = d + 2*y - 1
-			y = y - 1
-		} else {
-			d = d + 2*(y-x-1)
-			y = y - 1
-			x = x + 1
-		}
-	}
-}
-
-// DrawDisc draws a filled circle (disc) with center at (x0, y0) and specified radius.
-// The options parameter allows drawing specific sections of the disc.
-// If options is empty or contains DRAW_FULL, the entire disc is drawn.
-func (t *T8Go) DrawDisc(x0, y0, rad int16, options []DrawQuadrants) {
-	f := int16(1 - rad)
-	ddF_x := int16(1)
-	ddF_y := -2 * rad
-	x := int16(0)
-	y := rad
-
-	t.drawDiscSection(x, y, x0, y0, options)
-
-	for x < y {
-		if f >= 0 {
+		if decision >= 2*x {
+			decision -= 2*x + 1
+			x++
+		} else if decision < 2*(radius-y) {
+			decision += 2*y - 1
 			y--
-			ddF_y += 2
-			f += ddF_y
+		} else {
+			decision += 2 * (y - x - 1)
+			y--
+			x++
 		}
-		x++
-		ddF_x += 2
-		f += ddF_x
-
-		t.drawDiscSection(x, y, x0, y0, options)
 	}
 }
 
-func (t *T8Go) drawDiscSection(x, y, x0, y0 int16, options []DrawQuadrants) {
-	// Upper right
-	if t.shouldDraw(options, DRAW_TOP_RIGHT) {
-		t.DrawVLine(x0+x, y0-y, y+1)
-		t.DrawVLine(x0+y, y0-x, x+1)
-	}
+// DrawDisc draws a filled circle (disc) centered at (centerX, centerY) with the given radius.
+// The quadrants parameter determines which parts of the disc are drawn.
+// If quadrants is empty or includes DRAW_FULL, the entire disc is rendered.
+func (t *T8Go) DrawDisc(centerX, centerY, radius int16, quadrants []DrawQuadrants) {
+	decision := int16(1 - radius)
+	deltaX := int16(1)
+	deltaY := int16(-2 * radius)
+	offsetX := int16(0)
+	offsetY := radius
 
-	// Upper left
-	if t.shouldDraw(options, DRAW_TOP_LEFT) {
-		t.DrawVLine(x0-x, y0-y, y+1)
-		t.DrawVLine(x0-y, y0-x, x+1)
-	}
+	t.drawDiscSection(offsetX, offsetY, centerX, centerY, quadrants)
 
-	// Lower right
-	if t.shouldDraw(options, DRAW_BOTTOM_RIGHT) {
-		t.DrawVLine(x0+x, y0, y+1)
-		t.DrawVLine(x0+y, y0, x+1)
-	}
+	for offsetX < offsetY {
+		if decision >= 0 {
+			offsetY--
+			deltaY += 2
+			decision += deltaY
+		}
+		offsetX++
+		deltaX += 2
+		decision += deltaX
 
-	// Lower left
-	if t.shouldDraw(options, DRAW_BOTTOM_LEFT) {
-		t.DrawVLine(x0-x, y0, y+1)
-		t.DrawVLine(x0-y, y0, x+1)
+		t.drawDiscSection(offsetX, offsetY, centerX, centerY, quadrants)
+	}
+}
+
+func (t *T8Go) drawDiscSection(offsetX, offsetY, centerX, centerY int16, quadrants []DrawQuadrants) {
+	if t.shouldDraw(quadrants, DRAW_TOP_RIGHT) {
+		t.DrawVLine(centerX+offsetX, centerY-offsetY, offsetY+1)
+		t.DrawVLine(centerX+offsetY, centerY-offsetX, offsetX+1)
+	}
+	if t.shouldDraw(quadrants, DRAW_TOP_LEFT) {
+		t.DrawVLine(centerX-offsetX, centerY-offsetY, offsetY+1)
+		t.DrawVLine(centerX-offsetY, centerY-offsetX, offsetX+1)
+	}
+	if t.shouldDraw(quadrants, DRAW_BOTTOM_RIGHT) {
+		t.DrawVLine(centerX+offsetX, centerY, offsetY+1)
+		t.DrawVLine(centerX+offsetY, centerY, offsetX+1)
+	}
+	if t.shouldDraw(quadrants, DRAW_BOTTOM_LEFT) {
+		t.DrawVLine(centerX-offsetX, centerY, offsetY+1)
+		t.DrawVLine(centerX-offsetY, centerY, offsetX+1)
 	}
 }
