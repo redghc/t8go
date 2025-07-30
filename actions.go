@@ -58,10 +58,9 @@ func (t *T8Go) DrawBox(x, y, width, height int16) {
 		return
 	}
 
-	for j := int16(0); j < height; j++ {
-		offsetY := y + j
-		for i := int16(0); i < width; i++ {
-			t.SetPixel(x+i, offsetY, true)
+	for deltaY := range height {
+		for deltaX := range width {
+			t.SetPixel(x+deltaX, y+deltaY, true)
 		}
 	}
 }
