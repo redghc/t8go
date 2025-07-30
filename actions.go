@@ -110,32 +110,18 @@ func (t *T8Go) DrawFrameCoords(x1, y1, x2, y2 int16) {
 	t.DrawFrame(x1, y1, width, height)
 }
 
-type DrawQuadrants int
-
-const (
-	DRAW_FULL DrawQuadrants = iota
-	DRAW_TOP_LEFT
-	DRAW_TOP_RIGHT
-	DRAW_BOTTOM_RIGHT
-	DRAW_BOTTOM_LEFT
-)
-
 // DrawCircle draws a filled circle with center at (x0, y0) and specified radius.
 // The diameter of the circle is 2*radius + 1.
 // The options parameter allows drawing specific sections of the circle.
 // If options is empty or contains DRAW_FULL, the entire circle is drawn.
-func (t *T8Go) DrawCircle(x0, y0, rad uint8, options []DrawQuadrants) {
-	cx0 := int16(x0)
-	cy0 := int16(y0)
-	r := int16(rad)
-
-	f := int16(1 - r)
+func (t *T8Go) DrawCircle(x0, y0, rad int16, options []DrawQuadrants) {
+	f := int16(1 - rad)
 	ddF_x := int16(1)
-	ddF_y := -2 * r
+	ddF_y := -2 * rad
 	x := int16(0)
-	y := r
+	y := rad
 
-	t.drawCircleSection(x, y, cx0, cy0, options)
+	t.drawCircleSection(x, y, x0, y0, options)
 
 	for x < y {
 		if f >= 0 {
@@ -147,32 +133,26 @@ func (t *T8Go) DrawCircle(x0, y0, rad uint8, options []DrawQuadrants) {
 		ddF_x += 2
 		f += ddF_x
 
-		t.drawCircleSection(x, y, cx0, cy0, options)
+		t.drawCircleSection(x, y, x0, y0, options)
 	}
 }
 
 func (t *T8Go) drawCircleSection(x, y, x0, y0 int16, options []DrawQuadrants) {
-	draw := func(x, y int16) {
-		if x >= 0 && y >= 0 && x < 128 && y < 64 {
-			t.DrawPixel(x, y)
-		}
-	}
-
 	if shouldDraw(options, DRAW_TOP_RIGHT) {
-		draw(x0+x, y0-y)
-		draw(x0+y, y0-x)
+		t.drawArcPixel(x0+x, y0-y)
+		t.drawArcPixel(x0+y, y0-x)
 	}
 	if shouldDraw(options, DRAW_TOP_LEFT) {
-		draw(x0-x, y0-y)
-		draw(x0-y, y0-x)
+		t.drawArcPixel(x0-x, y0-y)
+		t.drawArcPixel(x0-y, y0-x)
 	}
 	if shouldDraw(options, DRAW_BOTTOM_RIGHT) {
-		draw(x0+x, y0+y)
-		draw(x0+y, y0+x)
+		t.drawArcPixel(x0+x, y0+y)
+		t.drawArcPixel(x0+y, y0+x)
 	}
 	if shouldDraw(options, DRAW_BOTTOM_LEFT) {
-		draw(x0-x, y0+y)
-		draw(x0-y, y0+x)
+		t.drawArcPixel(x0-x, y0+y)
+		t.drawArcPixel(x0-y, y0+x)
 	}
 }
 
@@ -186,4 +166,86 @@ func shouldDraw(options []DrawQuadrants, section DrawQuadrants) bool {
 		}
 	}
 	return false
+}
+
+// DrawArc draws an arc with center at (x0, y0), specified radius, and angular range from start to end.
+// The start and end angles are specified as values from 0 to 255, where:
+// - 0 represents 0 degrees (right)
+// - 64 represents 90 degrees (up)
+// - 128 represents 180 degrees (left)
+// - 192 represents 270 degrees (down)
+// - 255 represents 360 degrees (full circle)
+func (t *T8Go) DrawArc(x0, y0, rad int16, start, end uint8) {
+	// Manage angle inputs
+	full := (start == end)
+	inverted := (start > end)
+	var aStart, aEnd uint8
+	if inverted {
+		aStart = end
+		aEnd = start
+	} else {
+		aStart = start
+		aEnd = end
+	}
+
+	// Initialize variables
+	x := int16(0)
+	y := int16(rad)
+	d := int16(rad) - 1
+
+	// Trace arc radius with the Andres circle algorithm (process each pixel of a 1/8th circle of radius rad)
+	for y >= x {
+		// Get the percentage of 1/8th circle drawn with a fast approximation of arctan(x/y)
+		var ratio uint32
+		if y != 0 {
+			ratio = uint32(x) * 255 / uint32(y)                          // x/y [0..255]
+			ratio = ratio * (770195 - (ratio-255)*(ratio+941)) / 6137491 // arctan(x/y) [0..32]
+		}
+
+		// Fill the pixels of the 8 sections of the circle, but only on the arc defined by the angles (start and end)
+		if full || ((ratio >= uint32(aStart) && ratio < uint32(aEnd)) != inverted) {
+			t.drawArcPixel(x0+y, y0-x)
+		}
+		if full || (((ratio+uint32(aEnd)) > 63 && (ratio+uint32(aStart)) <= 63) != inverted) {
+			t.drawArcPixel(x0+x, y0-y)
+		}
+		if full || (((ratio+64) >= uint32(aStart) && (ratio+64) < uint32(aEnd)) != inverted) {
+			t.drawArcPixel(x0-x, y0-y)
+		}
+		if full || (((ratio+uint32(aEnd)) > 127 && (ratio+uint32(aStart)) <= 127) != inverted) {
+			t.drawArcPixel(x0-y, y0-x)
+		}
+		if full || (((ratio+128) >= uint32(aStart) && (ratio+128) < uint32(aEnd)) != inverted) {
+			t.drawArcPixel(x0-y, y0+x)
+		}
+		if full || (((ratio+uint32(aEnd)) > 191 && (ratio+uint32(aStart)) <= 191) != inverted) {
+			t.drawArcPixel(x0-x, y0+y)
+		}
+		if full || (((ratio+192) >= uint32(aStart) && (ratio+192) < uint32(aEnd)) != inverted) {
+			t.drawArcPixel(x0+x, y0+y)
+		}
+		if full || (((ratio+uint32(aEnd)) > 255 && (ratio+uint32(aStart)) <= 255) != inverted) {
+			t.drawArcPixel(x0+y, y0+x)
+		}
+
+		// Run Andres circle algorithm to get to the next pixel
+		if d >= 2*x {
+			d = d - 2*x - 1
+			x = x + 1
+		} else if d < 2*(int16(rad)-y) {
+			d = d + 2*y - 1
+			y = y - 1
+		} else {
+			d = d + 2*(y-x-1)
+			y = y - 1
+			x = x + 1
+		}
+	}
+}
+
+// drawArcPixel draws a pixel if it's within the display bounds
+func (t *T8Go) drawArcPixel(x, y int16) {
+	if x >= 0 && y >= 0 && x < 128 && y < 64 {
+		t.DrawPixel(x, y)
+	}
 }
