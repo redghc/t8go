@@ -311,3 +311,106 @@ func (t *T8Go) drawDiscSection(offsetX, offsetY, centerX, centerY int16, quadran
 		t.DrawVLine(centerX-offsetY, centerY, offsetX+1)
 	}
 }
+
+// DrawEllipse draws an outlined ellipse centered at (centerX, centerY) with the given radii.
+// The quadrants parameter determines which sections of the ellipse are drawn.
+// If quadrants is empty or includes DRAW_FULL, the entire ellipse is rendered.
+func (t *T8Go) DrawEllipse(centerX, centerY, radiusX, radiusY int16, quadrants []DrawQuadrants) {
+	var x, y int16
+	var xchange, ychange int32
+	var err int32
+	var rxrx2, ryry2 int32
+	var stopx, stopy int32
+
+	// Calculate squared and doubled radii
+	rxrx2 = int32(radiusX)
+	rxrx2 *= int32(radiusX)
+	rxrx2 *= 2
+
+	ryry2 = int32(radiusY)
+	ryry2 *= int32(radiusY)
+	ryry2 *= 2
+
+	// First region: |dx/dy| < 1
+	x = radiusX
+	y = 0
+
+	xchange = 1
+	xchange -= int32(radiusX)
+	xchange -= int32(radiusX)
+	xchange *= int32(radiusY)
+	xchange *= int32(radiusY)
+
+	ychange = int32(radiusX)
+	ychange *= int32(radiusX)
+
+	err = 0
+
+	stopx = ryry2
+	stopx *= int32(radiusX)
+	stopy = 0
+
+	for stopx >= stopy {
+		t.drawEllipseSection(x, y, centerX, centerY, quadrants)
+		y++
+		stopy += rxrx2
+		err += ychange
+		ychange += rxrx2
+		if 2*err+xchange > 0 {
+			x--
+			stopx -= ryry2
+			err += xchange
+			xchange += ryry2
+		}
+	}
+
+	// Second region: |dx/dy| >= 1
+	x = 0
+	y = radiusY
+
+	xchange = int32(radiusY)
+	xchange *= int32(radiusY)
+
+	ychange = 1
+	ychange -= int32(radiusY)
+	ychange -= int32(radiusY)
+	ychange *= int32(radiusX)
+	ychange *= int32(radiusX)
+
+	err = 0
+
+	stopx = 0
+
+	stopy = rxrx2
+	stopy *= int32(radiusY)
+
+	for stopx <= stopy {
+		t.drawEllipseSection(x, y, centerX, centerY, quadrants)
+		x++
+		stopx += ryry2
+		err += xchange
+		xchange += ryry2
+		if 2*err+ychange > 0 {
+			y--
+			stopy -= rxrx2
+			err += ychange
+			ychange += rxrx2
+		}
+	}
+}
+
+// drawEllipseSection draws the selected ellipse segments based on quadrant flags.
+func (t *T8Go) drawEllipseSection(offsetX, offsetY, centerX, centerY int16, quadrants []DrawQuadrants) {
+	if t.shouldDraw(quadrants, DRAW_TOP_RIGHT) {
+		t.DrawPixel(centerX+offsetX, centerY-offsetY)
+	}
+	if t.shouldDraw(quadrants, DRAW_TOP_LEFT) {
+		t.DrawPixel(centerX-offsetX, centerY-offsetY)
+	}
+	if t.shouldDraw(quadrants, DRAW_BOTTOM_RIGHT) {
+		t.DrawPixel(centerX+offsetX, centerY+offsetY)
+	}
+	if t.shouldDraw(quadrants, DRAW_BOTTOM_LEFT) {
+		t.DrawPixel(centerX-offsetX, centerY+offsetY)
+	}
+}
