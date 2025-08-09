@@ -22,12 +22,19 @@ type T8Go struct {
 
 // ----------
 
-type DrawQuadrants int
+type DrawQuadrants uint8
 
 const (
-	DRAW_FULL DrawQuadrants = iota
-	DRAW_TOP_LEFT
-	DRAW_TOP_RIGHT
-	DRAW_BOTTOM_RIGHT
-	DRAW_BOTTOM_LEFT
+	DrawNone        DrawQuadrants = 0
+	DrawTopLeft     DrawQuadrants = 1 << 0
+	DrawTopRight    DrawQuadrants = 1 << 1
+	DrawBottomRight DrawQuadrants = 1 << 2
+	DrawBottomLeft  DrawQuadrants = 1 << 3
+	DrawAll                       = DrawTopLeft | DrawTopRight | DrawBottomRight | DrawBottomLeft
 )
+
+// has checks if the given quadrant should be drawn.
+// If mask is DrawNone, it is interpreted as "draw all".
+func (mask DrawQuadrants) has(quadrant DrawQuadrants) bool {
+	return mask == DrawNone || (mask&quadrant) != 0
+}
