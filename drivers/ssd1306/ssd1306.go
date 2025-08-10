@@ -1,3 +1,6 @@
+// Package ssd1306 provides a driver for SSD1306 OLED displays.
+// It implements the t8go.Display interface and supports I2C communication
+// with configurable display dimensions and VCC modes.
 package ssd1306
 
 import (
@@ -8,28 +11,30 @@ import (
 
 // * ----- Definitions -----
 
+// Config holds the configuration parameters for an SSD1306 display.
 type Config struct {
-	Width   uint8
-	Height  uint8
-	VCCMode VCCMode
+	Width   uint8   // Display width in pixels (default: 128)
+	Height  uint8   // Display height in pixels (default: 64)
+	VCCMode VCCMode // VCC generation mode (default: VCC_SWITCH_CAP)
 }
 
+// display represents an SSD1306 OLED display instance.
 type display struct {
-	bus     *machine.I2C
-	address AddressMode
+	bus     *machine.I2C // I2C bus interface
+	address AddressMode  // I2C device address
 
-	width     uint8   // Default: 128
-	height    uint8   // Default: 64
-	pageCount uint8   // height / 8
-	stride    int     // bytes per page == width
-	vccMode   VCCMode // Default: VCC_SWITCH_CAP
+	width     uint8   // Display width in pixels
+	height    uint8   // Display height in pixels
+	pageCount uint8   // Number of 8-pixel high pages (height / 8)
+	stride    int     // Bytes per page (equals width)
+	vccMode   VCCMode // VCC generation mode
 
-	buffer  []byte
-	bufSize int
+	buffer  []byte // Display buffer
+	bufSize int    // Buffer size in bytes
 
 	// Pre-allocated command buffers to avoid allocations
-	cmdBuf  [32]byte
-	addrBuf [6]byte
+	cmdBuf  [32]byte // Command buffer for sending display commands
+	addrBuf [6]byte  // Address buffer for I2C operations
 }
 
 var _ t8go.Display = &display{}

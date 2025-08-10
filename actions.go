@@ -3,12 +3,14 @@ package t8go
 import "github.com/redghc/t8go/helpers"
 
 // DrawPixel sets a pixel at the specified coordinates (x, y) in the display buffer.
+// This is the most basic drawing primitive - a single point on the display.
 func (t *T8Go) DrawPixel(x, y int16) {
 	t.SetPixel(x, y, true)
 }
 
-// DrawLine draws a line between (startX, startY) and (endX, endY) using Bresenham's algorithm.
-// Origin pixels are included
+// DrawLine draws a line between two points (startX, startY) and (endX, endY)
+// using Bresenham's line algorithm for optimal pixel-perfect rendering.
+// Both origin and destination pixels are included in the line.
 func (t *T8Go) DrawLine(startX, startY, endX, endY int16) {
 	// Fast paths: vertical and horizontal lines
 	if startX == endX {
@@ -64,9 +66,9 @@ func (t *T8Go) DrawLine(startX, startY, endX, endY int16) {
 	}
 }
 
-// DrawVLine draws a vertical line starting at (originX, originY) with the given length.
-// Length is the number of pixels; the origin pixel is included.
-// Supports negative length (draws upward). No-op if length == 0.
+// DrawVLine draws a vertical line starting at (originX, originY) with the specified length.
+// The length parameter specifies the number of pixels to draw, including the origin pixel.
+// Supports negative length values (draws upward). No operation is performed if length is zero.
 func (t *T8Go) DrawVLine(originX, originY, length int16) {
 	direction := helpers.Direction(length)
 	if direction == 0 {
@@ -79,9 +81,9 @@ func (t *T8Go) DrawVLine(originX, originY, length int16) {
 	}
 }
 
-// DrawHLine draws a horizontal line starting at (originX, originY) with the given length.
-// Length is the number of pixels; the origin pixel is included.
-// Supports negative length (draws to the left). No-op if length == 0.
+// DrawHLine draws a horizontal line starting at (originX, originY) with the specified length.
+// The length parameter specifies the number of pixels to draw, including the origin pixel.
+// Supports negative length values (draws to the left). No operation is performed if length is zero.
 func (t *T8Go) DrawHLine(originX, originY, length int16) {
 	direction := helpers.Direction(length)
 	if direction == 0 {
@@ -94,8 +96,9 @@ func (t *T8Go) DrawHLine(originX, originY, length int16) {
 	}
 }
 
-// DrawLineAngle draws a line from (originX, originY) with the given length (origin included)
-// and angle in 0..255 units. Quality matches Bresenham by delegating to DrawLine.
+// DrawLineAngle draws a line from (originX, originY) with the specified length and angle.
+// The angle is specified in units of 0-255, where 64=90°, 128=180°, 192=270°.
+// The length includes the origin pixel. Quality matches Bresenham's algorithm by delegating to DrawLine.
 func (t *T8Go) DrawLineAngle(originX, originY, length int16, angle uint8) {
 	if length == 0 {
 		return
@@ -104,10 +107,10 @@ func (t *T8Go) DrawLineAngle(originX, originY, length int16, angle uint8) {
 	t.DrawLine(originX, originY, endX, endY)
 }
 
-// DrawBox draws a rectangular outline starting from the top-left corner (originX, originY) with the specified width and height.
-// Supports negative width/height to draw in the opposite direction.
-// Must be at least 2x2 in absolute size to form a valid frame.
-// Origin pixel is included.
+// DrawBox draws a rectangular outline starting from (originX, originY) with specified dimensions.
+// The width and height parameters define the size of the rectangle.
+// Supports negative width/height values to draw in the opposite direction.
+// Must be at least 2x2 in absolute size to form a valid frame outline.
 func (t *T8Go) DrawBox(originX, originY, width, height int16) {
 	directionX := helpers.Direction(width)
 	directionY := helpers.Direction(height)
@@ -141,8 +144,9 @@ func (t *T8Go) DrawBoxCoords(startX, startY, endX, endY int16) {
 	t.DrawBox(originX, originY, width, height)
 }
 
-// DrawRoundBox draws a rectangle outline with rounded corners.
-// Corner radius is clamped to fit within width/height.
+// DrawRoundBox draws a rectangular outline with rounded corners.
+// The cornerRadius parameter controls the curvature of the corners.
+// Corner radius is automatically clamped to fit within the rectangle dimensions.
 func (t *T8Go) DrawRoundBox(originX, originY, width, height, cornerRadius int16) {
 	uWidth := helpers.Abs(width)
 	uHeight := helpers.Abs(height)
@@ -186,10 +190,10 @@ func (t *T8Go) DrawRoundBox(originX, originY, width, height, cornerRadius int16)
 	t.DrawCircle(minX+cornerRadius, maxY-cornerRadius, cornerRadius, DrawBottomLeft)
 }
 
-// DrawBoxFill draws a filled rectangle starting from the top-left corner (originX, originY)
-// with the specified dimensions: width and height.
-// Supports negative width/height to draw in the opposite direction.
-// Origin pixel is included. No-op if width == 0 or height == 0.
+// DrawBoxFill draws a filled rectangle starting from (originX, originY) with specified dimensions.
+// The width and height parameters define the size of the filled rectangle.
+// Supports negative width/height values to draw in the opposite direction.
+// No operation is performed if width or height is zero.
 func (t *T8Go) DrawBoxFill(originX, originY, width, height int16) {
 	directionY := helpers.Direction(height)
 	directionX := helpers.Direction(width)
@@ -218,7 +222,8 @@ func (t *T8Go) DrawBoxFillCoords(startX, startY, endX, endY int16) {
 }
 
 // DrawRoundBoxFill draws a filled rectangle with rounded corners.
-// Corner radius is clamped to fit within width/height.
+// The cornerRadius parameter controls the curvature of the corners.
+// Corner radius is automatically clamped to fit within the rectangle dimensions.
 func (t *T8Go) DrawRoundBoxFill(originX, originY, width, height, cornerRadius int16) {
 	uWidth := helpers.Abs(width)
 	uHeight := helpers.Abs(height)
@@ -267,15 +272,17 @@ func (t *T8Go) DrawRoundBoxFill(originX, originY, width, height, cornerRadius in
 	t.DrawCircleFill(minX+cornerRadius, maxY-cornerRadius, cornerRadius, DrawBottomLeft)
 }
 
-// DrawTriangle draws the outline of a triangle connecting points (x1,y1), (x2,y2), (x3,y3).
+// DrawTriangle draws the outline of a triangle connecting three points.
+// The triangle is drawn by connecting (x1,y1) to (x2,y2) to (x3,y3) and back to (x1,y1).
 func (t *T8Go) DrawTriangle(x1, y1, x2, y2, x3, y3 int16) {
 	t.DrawLine(x1, y1, x2, y2)
 	t.DrawLine(x2, y2, x3, y3)
 	t.DrawLine(x3, y3, x1, y1)
 }
 
-// DrawTriangleFill draws a filled triangle connecting points (x1,y1), (x2,y2), (x3,y3).
-// The edges are inclusive, ensuring no gaps.
+// DrawTriangleFill draws a filled triangle connecting three points.
+// The triangle is filled using scanline rendering to ensure complete coverage
+// with inclusive edges and no gaps.
 func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16) {
 	t.DrawTriangle(x1, y1, x2, y2, x3, y3)
 
@@ -309,10 +316,10 @@ func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16) {
 	}
 }
 
-// DrawCircle draws an outlined circle centered at (centerX, centerY) with the given radius.
-// The diameter of the circle is 2*radius + 1.
-// The mask parameter determines which quadrants of the circle will be drawn.
-// If mask is DrawNone, the entire circle is rendered.
+// DrawCircle draws an outlined circle centered at (centerX, centerY) with the specified radius.
+// The circle diameter will be 2*radius + 1 pixels.
+// The mask parameter controls which quadrants are drawn using DrawQuadrants flags.
+// Use DrawNone or DrawAll to draw the complete circle.
 func (t *T8Go) DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants) {
 	if radius <= 0 {
 		return
@@ -362,8 +369,9 @@ func (t *T8Go) drawCircleSection(offsetX, offsetY, centerX, centerY int16, mask 
 	}
 }
 
-// DrawCircleFill draws a filled circle centered at (centerX, centerY) with the given radius.
-// The mask parameter selects which quadrants are filled. If mask is DrawNone, the entire disc is filled.
+// DrawCircleFill draws a filled circle centered at (centerX, centerY) with the specified radius.
+// The mask parameter controls which quadrants are filled using DrawQuadrants flags.
+// Use DrawNone or DrawAll to fill the complete circle disc.
 func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants) {
 	if radius <= 0 {
 		return
@@ -413,10 +421,11 @@ func (t *T8Go) drawCircleFillSection(offsetX, offsetY, centerX, centerY int16, m
 	}
 }
 
-// DrawEllipse draws an outlined ellipse centered at (centerX, centerY) with radiusX and radiusY.
-// The mask parameter determines which quadrants will be drawn.
-// If mask is DrawNone, the entire ellipse outline is rendered.
-// No-op if radiusX <= 0 or radiusY <= 0.
+// DrawEllipse draws an outlined ellipse centered at (centerX, centerY) with specified radii.
+// The radiusX and radiusY parameters define the horizontal and vertical extents.
+// The mask parameter controls which quadrants are drawn using DrawQuadrants flags.
+// Use DrawNone or DrawAll to draw the complete ellipse outline.
+// No operation is performed if either radius is less than or equal to zero.
 func (t *T8Go) DrawEllipse(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants) {
 	if radiusX <= 0 || radiusY <= 0 {
 		return
@@ -501,9 +510,11 @@ func (t *T8Go) drawEllipseSection(offsetX, offsetY, centerX, centerY int16, mask
 	}
 }
 
-// DrawEllipseFill draws a filled ellipse centered at (centerX, centerY) with radiusX and radiusY.
-// The mask parameter selects which quadrants are filled. If mask is DrawNone, the entire area is filled.
-// No-op if radiusX <= 0 or radiusY <= 0.
+// DrawEllipseFill draws a filled ellipse centered at (centerX, centerY) with specified radii.
+// The radiusX and radiusY parameters define the horizontal and vertical extents.
+// The mask parameter controls which quadrants are filled using DrawQuadrants flags.
+// Use DrawNone or DrawAll to fill the complete ellipse area.
+// No operation is performed if either radius is less than or equal to zero.
 func (t *T8Go) DrawEllipseFill(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants) {
 	if radiusX <= 0 || radiusY <= 0 {
 		return
@@ -596,17 +607,17 @@ func (t *T8Go) drawEllipseFillSection(offsetX, offsetY, centerX, centerY int16, 
 	}
 }
 
-// DrawArc draws an outlined arc centered at (centerX, centerY) with the given radius.
-// Angles are expressed in 0..255 units where:
-//
-//	0   =   0° (right)
-//	64  =  90° (up)
-//	128 = 180° (left)
-//	192 = 270° (down)
-//	255 = 360° (wrap to 0)
-//
+// DrawArc draws an outlined arc (partial circle) centered at (centerX, centerY) with the specified radius.
+// Angles are expressed in 0-255 units where 0=0°, 64=90°, 128=180°, 192=270°.
 // The arc is rendered from angleStart (inclusive) to angleEnd (exclusive).
-// If angleStart == angleEnd, a full circle is drawn.
+// If angleStart equals angleEnd, a complete circle is drawn.
+//
+// Angle reference:
+//   - 0   =   0° (right)
+//   - 64  =  90° (up)
+//   - 128 = 180° (left)
+//   - 192 = 270° (down)
+//   - 255 = 360° (wraps to 0)
 func (t *T8Go) DrawArc(centerX, centerY, radius int16, angleStart, angleEnd uint8) {
 	if radius <= 0 {
 		return
@@ -687,10 +698,10 @@ func (t *T8Go) drawArcSection(offsetX, offsetY, centerX, centerY int16, angleSta
 	}
 }
 
-// DrawArcFill draws a filled arc (sector) centered at (centerX, centerY) with the given radius.
-// Angles are expressed in 0..255 units where 64 = 90°, 128 = 180°, 192 = 270°.
+// DrawArcFill draws a filled arc (sector/pie slice) centered at (centerX, centerY) with the specified radius.
+// Angles are expressed in 0-255 units where 64=90°, 128=180°, 192=270°.
 // The arc is rendered from angleStart (inclusive) to angleEnd (exclusive).
-// If angleStart == angleEnd, a full disc is filled.
+// If angleStart equals angleEnd, a complete filled circle is drawn.
 func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd uint8) {
 	if radius <= 0 {
 		return

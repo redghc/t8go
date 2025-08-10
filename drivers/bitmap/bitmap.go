@@ -1,3 +1,6 @@
+// Package bitmap provides a bitmap file output driver for t8go graphics.
+// It implements the t8go.Display interface and allows rendering graphics
+// directly to bitmap (.bmp) files for testing and visualization purposes.
 package bitmap
 
 import (
@@ -7,18 +10,22 @@ import (
 	"github.com/redghc/t8go"
 )
 
-// display implements the t8go.Display interface for bitmap output
+// display implements the t8go.Display interface for bitmap file output.
+// It provides a virtual display that saves graphics as bitmap files.
 type display struct {
-	width    uint16
-	height   uint16
-	filename string
-	buffer   []byte
-	bufSize  int
+	width    uint16 // Display width in pixels
+	height   uint16 // Display height in pixels
+	filename string // Output bitmap filename
+	buffer   []byte // Display buffer
+	bufSize  int    // Buffer size in bytes
 }
 
 var _ t8go.Display = &display{}
 
-// New creates a new bitmap display instance
+// New creates a new bitmap display instance with the specified configuration.
+// The display will render graphics to a bitmap file with the given dimensions.
+// If no filename is specified, it defaults to "display.bmp".
+// Returns an error if the dimensions are invalid (zero width or height).
 func New(config Config) (t8go.Display, error) {
 	if config.Width == 0 || config.Height == 0 {
 		return nil, ErrInvalidDimensions

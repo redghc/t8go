@@ -3,27 +3,35 @@
 [![Go Version](https://img.shields.io/badge/go-1.24.5+-blue.svg)](https://golang.org/doc/devel/release.html)
 [![TinyGo Compatible](https://img.shields.io/badge/tinygo-compatible-brightgreen.svg)](https://tinygo.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Go Reference](https://pkg.go.dev/badge/github.com/redghc/t8go.svg)](https://pkg.go.dev/github.com/redghc/t8go)
 
 ## Graphics library for monochrome displays
 
-t8go is a lightweight, high-performance graphics library designed for embedded displays and microcontrollers. Built for Go and TinyGo, it provides comprehensive 2D drawing capabilities optimized for resource-constrained environments.
+t8go is a lightweight, high-performance 2D graphics library specifically designed for embedded displays and microcontrollers. Built for Go and TinyGo compatibility, it provides comprehensive drawing capabilities optimized for resource-constrained environments with minimal memory footprint.
 
 ## Features
 
-### Core Drawing Functions
+### Core drawing operations
 
-- **Pixel Operations**: Individual pixel drawing and reading
-- **Lines**: Horizontal, vertical, and arbitrary lines with Bresenham's algorithm
-- **Rectangles**: Outlined and filled rectangles with optional rounded corners
-- **Circles & Ellipses**: Perfect circles and ellipses with quadrant selection
-- **Arcs**: Partial circles with configurable start/end angles
-- **Triangles**: Outlined and filled triangles
+- **Pixel**: Individual pixel drawing and reading with coordinate-based addressing
+- **Line**: Horizontal, vertical, and arbitrary lines using optimized Bresenham's algorithm
+- **Rectangle**: Outlined and filled rectangles with optional rounded corners
+- **Geometric Shapes**: Perfect circles and ellipses with selective quadrant rendering
+- **Arc**: Partial circles and pie charts with configurable start/end angles (0-255° system)
+- **Triangle**: Both outlined and filled triangles with scanline-based filling
 
-### Display Support
+### Display Architecture
 
 - **Generic Interface**: Works with any display implementing the `Display` interface
-- **SSD1306 Driver**: Ready-to-use I2C driver for OLED displays
-- **Buffer Management**: Efficient display buffer operations
+- **SSD1306 Driver**: Production-ready I2C driver for OLED displays (128x64, 128x32)
+- **Bitmap Driver**: File output for testing and development visualization
+- **Buffer Management**: Efficient display buffer operations with memory optimization
+
+### Performance Optimizations
+
+- **Integer Arithmetic**: All operations use integer math for embedded system compatibility
+- **Memory Efficient**: Minimal allocations with pre-allocated buffers where possible
+- **TinyGo Ready**: Full compatibility with TinyGo compiler and microcontroller targets
 
 ## Installation
 
@@ -32,6 +40,8 @@ go get github.com/redghc/t8go
 ```
 
 ## Quick Start
+
+### Basic Setup with SSD1306 Display
 
 ```go
 package main
@@ -43,7 +53,7 @@ import (
 )
 
 func main() {
-    // Initialize I2C
+    // Initialize I2C bus
     machine.I2C0.Configure(machine.I2CConfig{
         Frequency: machine.TWI_FREQ_400KHZ,
     })
@@ -51,7 +61,7 @@ func main() {
     // Create SSD1306 display (128x64)
     display, err := ssd1306.NewI2C(
         machine.I2C0,
-        ssd1306.ADDRESS_GND, // or ADDRESS_VCC
+        ssd1306.ADDRESS_GND,
         ssd1306.Config{
             Width:   128,
             Height:  64,
@@ -62,37 +72,47 @@ func main() {
         panic(err)
     }
 
-    // Create T8Go graphics context
-    graphics := t8go.New(display)
+    // Initialize graphics context
+    gfx := t8go.New(display)
 
-    // Clear screen
-    graphics.ClearDisplay()
+    // Clear the display
+    gfx.ClearDisplay()
 
-    // Draw some shapes
-    graphics.DrawLine(0, 0, 127, 63)           // Diagonal line
-    graphics.DrawBox(10, 10, 50, 30)           // Rectangle
-    graphics.DrawCircle(64, 32, 20, t8go.DrawAll) // Circle
+    // Draw various shapes
+    gfx.DrawPixel(10, 10)
+    gfx.DrawLine(0, 0, 127, 63)
+    gfx.DrawBox(20, 20, 40, 30)
+    gfx.DrawCircle(64, 32, 20, t8go.DrawAll)
 
-    // Update display
-    graphics.Display()
+    // Update the display
+    gfx.Display()
 }
 ```
 
 ## API Reference
 
-### Core Methods
+### Core graphics context
 
-#### Display Management
+The main `t8go` struct provides all drawing operations:
 
 ```go
+type T8Go struct {
+    // Contains filtered or unexported fields
+}
+
+// Create new graphics context
 func New(display Display) *T8Go
-func (t *T8Go) Display() error
+
+// Display management
+func (t *T8Go) Size() (width, height uint16)
 func (t *T8Go) ClearBuffer()
 func (t *T8Go) ClearDisplay()
-func (t *T8Go) Size() (width, height uint16)
+func (t *T8Go) Display() error
 ```
 
-#### Pixel Operations
+### Drawing Functions
+
+#### Basic Primitives
 
 ```go
 func (t *T8Go) DrawPixel(x, y int16)
@@ -106,31 +126,35 @@ func (t *T8Go) GetPixel(x, y uint8) bool
 func (t *T8Go) DrawLine(startX, startY, endX, endY int16)
 func (t *T8Go) DrawHLine(originX, originY, length int16)
 func (t *T8Go) DrawVLine(originX, originY, length int16)
+func (t *T8Go) DrawLineAngle(originX, originY, length int16, angle uint8)
 ```
 
 #### Rectangles
 
 ```go
+// Rectangle outlines
 func (t *T8Go) DrawBox(originX, originY, width, height int16)
 func (t *T8Go) DrawBoxCoords(startX, startY, endX, endY int16)
+func (t *T8Go) DrawRoundBox(originX, originY, width, height, cornerRadius int16)
+
+// Filled rectangles
 func (t *T8Go) DrawBoxFill(originX, originY, width, height int16)
 func (t *T8Go) DrawBoxFillCoords(startX, startY, endX, endY int16)
-func (t *T8Go) DrawRoundBox(originX, originY, width, height, cornerRadius int16)
 func (t *T8Go) DrawRoundBoxFill(originX, originY, width, height, cornerRadius int16)
 ```
 
-#### Circles & Ellipses
+#### Circles, arcs & ellipses
 
 ```go
+// Circle 
 func (t *T8Go) DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants)
 func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants)
+
+// Ellipse
 func (t *T8Go) DrawEllipse(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants)
 func (t *T8Go) DrawEllipseFill(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants)
-```
 
-#### Arcs
-
-```go
+// Arc operations (0-255 angle system)
 func (t *T8Go) DrawArc(centerX, centerY, radius int16, angleStart, angleEnd uint8)
 func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd uint8)
 ```
@@ -142,11 +166,13 @@ func (t *T8Go) DrawTriangle(x1, y1, x2, y2, x3, y3 int16)
 func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16)
 ```
 
-### Quadrant Constants
+### Quadrant System
+
+The `DrawQuadrants` type allows selective rendering of circle/ellipse portions:
 
 ```go
 const (
-    DrawNone        DrawQuadrants = 0      // Draw entire shape
+    DrawNone        DrawQuadrants = 0
     DrawTopLeft     DrawQuadrants = 1 << 0
     DrawTopRight    DrawQuadrants = 1 << 1
     DrawBottomRight DrawQuadrants = 1 << 2
@@ -157,31 +183,24 @@ const (
 
 ### Angle System
 
-Arcs use a 0-255 angle system:
-
-- `0` = 0° (right/east)
-- `64` = 90° (up/north)
-- `128` = 180° (left/west)
-- `192` = 270° (down/south)
-- `255` = 360° (wraps to 0°)
+Arc functions use a 0-255 angle system for precise embedded calculations:
+- `0` = 0° (East/Right)
+- `64` = 90° (North/Up)
+- `128` = 180° (West/Left)
+- `192` = 270° (South/Down)
+- `255` = ~360° (wraps to 0)
 
 ## Supported Hardware
 
 ### Displays
 
 - **SSD1306**: 128x64, 128x32 OLED displays via I2C
+- **bitmap**: Bitmap driver for rendering to BMP files
 - **Generic**: Any display implementing the `Display` interface
 
-### Microcontrollers
+### Custom Display Driver
 
-- **Arduino-compatible**: ESP32, ESP8266, Arduino Uno, etc.
-- **ARM Cortex-M**: STM32, nRF52, RP2040, SAMD21/51
-- **RISC-V**: ESP32-C3, CH32V, BL602
-- **Desktop**: Standard Go runtime for testing/simulation
-
-## Display Interface
-
-To add support for new displays, implement the `Display` interface:
+Implement the `Display` interface for custom hardware:
 
 ```go
 type Display interface {
@@ -214,19 +233,6 @@ t8go is inspired by the [u8g2](https://github.com/olikraus/u8g2) library, a popu
 
 t8go does not include any font implementations or font files from the U8g2 project.
 Therefore, no additional font-specific licenses from U8g2 apply to this software.
-
-### Key differences with u8g2:
-
-- **Idiomatic Go Design**: Uses Go-native patterns and conventions
-- **TinyGo Integration**: Optimized for TinyGo compiler and microcontrollers
-- **Interface-based**: Interface-driven architecture for greater flexibility
-- **Memory efficiency**: Memory management adapted to embedded Go constraints
-
-## Acknowledgments
-
-- Inspired by [U8g2 library](https://github.com/olikraus/u8g2) for C/C++
-- Bresenham and midpoint algorithms from computer graphics literature
-- TinyGo community for embedded Go development
 
 ---
 

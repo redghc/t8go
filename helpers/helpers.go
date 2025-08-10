@@ -1,3 +1,7 @@
+// Package helpers provides utility functions for mathematical operations
+// and geometric calculations used throughout the t8go graphics library.
+// It includes functions for absolute values, angle calculations,
+// and coordinate transformations optimized for embedded systems.
 package helpers
 
 // Abs returns the absolute value of a signed integer (keeps original type).
