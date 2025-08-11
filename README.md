@@ -146,7 +146,7 @@ func (t *T8Go) DrawRoundBoxFill(originX, originY, width, height, cornerRadius in
 #### Circles, arcs & ellipses
 
 ```go
-// Circle 
+// Circle
 func (t *T8Go) DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants)
 func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants)
 
@@ -184,6 +184,7 @@ const (
 ### Angle System
 
 Arc functions use a 0-255 angle system for precise embedded calculations:
+
 - `0` = 0° (East/Right)
 - `64` = 90° (North/Up)
 - `128` = 180° (West/Left)
@@ -222,17 +223,40 @@ type Display interface {
 This project is licensed under the MIT License.
 See the [LICENSE](LICENSE) file for details.
 
-## Inspiration and Design Philosophy
+## Acknowledgements
 
-This project is inspired by [u8g2](https://github.com/olikraus/u8g2)
-Copyright (c) 2016 olikraus@gmail.com
-Licensed under the BSD 2-Clause License:
-https://opensource.org/licenses/BSD-2-Clause
+- This project is inspired by U8g2: https://github.com/olikraus/u8g2
+- Copyright (c) 2016 olikraus@gmail.com
+- Licensed under the BSD 2-Clause License:
+- https://opensource.org/licenses/BSD-2-Clause
 
-t8go is inspired by the [u8g2](https://github.com/olikraus/u8g2) library, a popular graphics library for microcontrollers in C/C++. However, it differs in several key points, being an adapted implementation designed specifically for the TinyGo ecosystem and Go methodologies.
+Redistribution and use of the original U8g2 source code or binary forms, with
+or without modification, are permitted provided that the following conditions
+are met:
 
-t8go does not include any font implementations or font files from the U8g2 project.
-Therefore, no additional font-specific licenses from U8g2 apply to this software.
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE FROM U8G2 IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+### Additional Notice
+
+t8go does not include any font implementations or font files from the U8g2
+project. Therefore, no additional font-specific licenses from U8g2 apply to
+this software.
 
 ---
 

@@ -1,0 +1,9 @@
+version = 1
+
+[[files]]
+path = "LICENSE"
+license = "MIT"
+
+[[files]]
+path = "LICENSES/BSD-2-Clause-u8g2.txt"
+license = "BSD-2-Clause"
