@@ -20,13 +20,13 @@ type display struct {
 	bufSize  int    // Buffer size in bytes
 }
 
-var _ t8go.Display = &display{}
+var _ t8go.IDisplay = &display{}
 
 // New creates a new bitmap display instance with the specified configuration.
 // The display will render graphics to a bitmap file with the given dimensions.
 // If no filename is specified, it defaults to "display.bmp".
 // Returns an error if the dimensions are invalid (zero width or height).
-func New(config Config) (t8go.Display, error) {
+func New(config Config) (t8go.IDisplay, error) {
 	if config.Width == 0 || config.Height == 0 {
 		return nil, ErrInvalidDimensions
 	}

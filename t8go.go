@@ -8,7 +8,7 @@ package t8go
 // New creates a new T8Go graphics context with the specified display.
 // The display parameter must implement the Display interface.
 // Returns a pointer to a T8Go instance that can be used for drawing operations.
-func New(display Display) DisplayDrawer {
+func New(display IDisplay) IDisplayDrawer {
 	bufferSize := display.BufferSize()
 
 	return &T8Go{
@@ -18,7 +18,7 @@ func New(display Display) DisplayDrawer {
 }
 
 // GetDisplay returns the underlying display interface
-func (t *T8Go) GetDisplay() Display {
+func (t *T8Go) GetDisplay() IDisplay {
 	return t.display
 }
 
