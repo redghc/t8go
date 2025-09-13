@@ -19,6 +19,70 @@ type Display interface {
 
 // ----------
 
+// DisplayDrawer provides a comprehensive interface for drawing operations on display devices.
+// It combines basic display management with advanced drawing capabilities including geometric shapes,
+// lines, and pixel manipulation. The interface supports both outlined and filled shapes, with
+// specialized methods for circles, ellipses, arcs, and various box types.
+//
+// Basic Operations:
+//   - Display management: get display info, buffer operations, clearing
+//   - Pixel operations: set, get, and draw individual pixels
+//   - Command execution and display updates
+//
+// Drawing Capabilities:
+//   - Lines: straight lines, vertical/horizontal lines, angled lines
+//   - Rectangles: basic boxes, rounded boxes, coordinate-based boxes (both outlined and filled)
+//   - Triangles: outlined and filled triangles
+//   - Circles: full or partial circles with quadrant masking (outlined and filled)
+//   - Ellipses: full or partial ellipses with quadrant masking (outlined and filled)
+//   - Arcs: circular arcs with start/end angles (outlined and filled)
+//
+// Coordinate System:
+//   - Uses int16 for most coordinates to support negative values and larger displays
+//   - Pixel queries use uint8 for optimization on smaller displays
+//   - Display dimensions returned as uint16
+//
+// The interface is designed to work with various display technologies and provides
+// a unified API for both simple and complex drawing operations.
+type DisplayDrawer interface {
+	GetDisplay() Display
+	Size() (width, height uint16)
+	BufferSize() int
+	Buffer() []byte
+	ClearBuffer()
+	ClearDisplay()
+	Command(cmd byte) error
+	Display() error
+	SetPixel(x, y int16, on bool)
+	GetPixel(x, y uint8) bool
+
+	DrawPixel(x, y int16)
+
+	DrawLine(startX, startY, endX, endY int16)
+	DrawVLine(originX, originY, length int16)
+	DrawHLine(originX, originY, length int16)
+	DrawLineAngle(originX, originY, length int16, angle uint8)
+
+	DrawBox(originX, originY, width, height int16)
+	DrawBoxCoords(startX, startY, endX, endY int16)
+	DrawRoundBox(originX, originY, width, height, cornerRadius int16)
+	DrawBoxFill(originX, originY, width, height int16)
+	DrawBoxFillCoords(startX, startY, endX, endY int16)
+	DrawRoundBoxFill(originX, originY, width, height, cornerRadius int16)
+
+	DrawTriangle(x1, y1, x2, y2, x3, y3 int16)
+	DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16)
+
+	DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants)
+	DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants)
+
+	DrawEllipse(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants)
+	DrawEllipseFill(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants)
+
+	DrawArc(centerX, centerY, radius int16, angleStart, angleEnd uint8)
+	DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd uint8)
+}
+
 // T8Go is the main graphics context that provides high-level drawing operations.
 // It wraps a Display interface and provides methods for drawing various shapes
 // such as lines, rectangles, circles, and other geometric primitives.
@@ -26,6 +90,8 @@ type T8Go struct {
 	display Display // The underlying display interface
 	buffer  []byte  // Internal buffer for graphics operations
 }
+
+var _ DisplayDrawer = (*T8Go)(nil) // Ensure T8Go implements DisplayDrawer
 
 // ----------
 
