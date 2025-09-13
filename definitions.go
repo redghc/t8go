@@ -2,9 +2,9 @@ package t8go
 
 import "github.com/redghc/t8go/helpers"
 
-// Display represents a generic display interface that all display drivers must implement.
+// IDisplay represents a generic display interface that all display drivers must implement.
 // It provides low-level operations for drawing pixels and managing the display buffer.
-type Display interface {
+type IDisplay interface {
 	Size() (width, height uint16) // Size returns the display dimensions in pixels
 	BufferSize() int              // BufferSize returns the size in bytes of the display buffer
 	Buffer() []byte               // Buffer returns the underlying display buffer
@@ -19,7 +19,7 @@ type Display interface {
 
 // ----------
 
-// DisplayDrawer provides a comprehensive interface for drawing operations on display devices.
+// IDisplayDrawer provides a comprehensive interface for drawing operations on display devices.
 // It combines basic display management with advanced drawing capabilities including geometric shapes,
 // lines, and pixel manipulation. The interface supports both outlined and filled shapes, with
 // specialized methods for circles, ellipses, arcs, and various box types.
@@ -44,8 +44,8 @@ type Display interface {
 //
 // The interface is designed to work with various display technologies and provides
 // a unified API for both simple and complex drawing operations.
-type DisplayDrawer interface {
-	GetDisplay() Display
+type IDisplayDrawer interface {
+	GetDisplay() IDisplay
 	Size() (width, height uint16)
 	BufferSize() int
 	Buffer() []byte
@@ -87,11 +87,11 @@ type DisplayDrawer interface {
 // It wraps a Display interface and provides methods for drawing various shapes
 // such as lines, rectangles, circles, and other geometric primitives.
 type T8Go struct {
-	display Display // The underlying display interface
-	buffer  []byte  // Internal buffer for graphics operations
+	display IDisplay // The underlying display interface
+	buffer  []byte   // Internal buffer for graphics operations
 }
 
-var _ DisplayDrawer = (*T8Go)(nil) // Ensure T8Go implements DisplayDrawer
+var _ IDisplayDrawer = (*T8Go)(nil) // Ensure T8Go implements DisplayDrawer
 
 // ----------
 
