@@ -11,7 +11,7 @@ package t8go
 func New(display IDisplay) IDisplayDrawer {
 	w, h := display.Size()
 
-	// colScratch holds the vertical extent of each column for filled
+	// colExtents holds the vertical extent of each column for filled
 	// circle/ellipse rendering; index by the horizontal offset from center.
 	maxDim := max(w, h)
 
@@ -19,8 +19,8 @@ func New(display IDisplay) IDisplayDrawer {
 		display:    display,
 		width:      int16(w),
 		height:     int16(h),
-		scratch:    make([]scanSpan, int(h)),
-		colScratch: make([]scanSpan, int(maxDim)/2+1),
+		spans:      make([]scanSpan, int(h)),
+		colExtents: make([]scanSpan, int(maxDim)/2+1),
 	}
 }
 

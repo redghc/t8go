@@ -346,12 +346,12 @@ func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16) {
 	// Accumulate edge pixels into scanline spans (reused scratch buffer).
 	// The edge spans already cover the outline pixels, so no separate
 	// outline pass is needed.
-	clear(t.scratch)
-	scanAddLineToSpans(t.scratch, x1, y1, x2, y2)
-	scanAddLineToSpans(t.scratch, x2, y2, x3, y3)
-	scanAddLineToSpans(t.scratch, x3, y3, x1, y1)
+	clear(t.spans)
+	scanAddLineToSpans(t.spans, x1, y1, x2, y2)
+	scanAddLineToSpans(t.spans, x2, y2, x3, y3)
+	scanAddLineToSpans(t.spans, x3, y3, x1, y1)
 
-	t.paintSpans(t.scratch)
+	t.paintSpans(t.spans)
 }
 
 // minPolygonVertices is the minimum number of vertices a polygon (outline or
@@ -375,13 +375,13 @@ func (t *T8Go) DrawPolygon(points ...Point) {
 	// Compute the filled runs for every row so the boundary pass can check the
 	// coverage of the rows above and below.
 	offsets := make([]int, rowCount+1)
-	buffer := t.polyBuf[:0]
+	buffer := t.runRows[:0]
 	for i := range rowCount {
 		offsets[i] = len(buffer)
 		buffer = append(buffer, t.polyRuns(points, yMin+int16(i))...)
 	}
 	offsets[rowCount] = len(buffer)
-	t.polyBuf = buffer
+	t.runRows = buffer
 
 	for i := range rowCount {
 		curr := buffer[offsets[i]:offsets[i+1]]
@@ -419,9 +419,9 @@ func (t *T8Go) DrawPolygonFill(points ...Point) {
 
 // polyRuns returns the filled runs of the polygon on scanline y as sorted
 // [start, end] pairs, using even-odd pixel-center crossings. The returned
-// slice aliases t.polyXS and is overwritten on the next call.
+// slice aliases t.crossings and is overwritten on the next call.
 func (t *T8Go) polyRuns(points []Point, y int16) []int16 {
-	xs := t.polyXS
+	xs := t.crossings
 	if cap(xs) < len(points) {
 		xs = make([]int16, 0, len(points))
 	}
@@ -443,7 +443,7 @@ func (t *T8Go) polyRuns(points []Point, y int16) []int16 {
 			runs = append(runs, start, end)
 		}
 	}
-	t.polyXS = runs
+	t.crossings = runs
 	return runs
 }
 
@@ -617,7 +617,7 @@ func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants
 	// Full disc fast path: compute each column's vertical extent once and
 	// paint it with a page-aligned FillVRun, instead of 8 overlapping
 	// vertical runs per perimeter step.
-	if (mask == DrawNone || mask == DrawAll) && radius < int16(len(t.colScratch)) {
+	if (mask == DrawNone || mask == DrawAll) && radius < int16(len(t.colExtents)) {
 		t.fillCircle(centerX, centerY, radius)
 		return
 	}
@@ -649,7 +649,7 @@ func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants
 // record the vertical half-extent of each column, then every column is painted
 // exactly once.
 func (t *T8Go) fillCircle(centerX, centerY, radius int16) {
-	clear(t.colScratch)
+	clear(t.colExtents)
 
 	errorAccumulator := 1 - radius
 	deltaX := int16(1)
@@ -683,12 +683,12 @@ func (t *T8Go) recordCircleExtent(offsetX, offsetY int16) {
 
 // setColExtent records (or grows) the vertical half-extent for column offset.
 func (t *T8Go) setColExtent(offset, extent int16) {
-	if offset < 0 || int(offset) >= len(t.colScratch) {
+	if offset < 0 || int(offset) >= len(t.colExtents) {
 		return
 	}
-	row := t.colScratch[offset]
+	row := t.colExtents[offset]
 	row.AddPoint(extent)
-	t.colScratch[offset] = row
+	t.colExtents[offset] = row
 }
 
 // paintColumnExtents fills one vertical run per recorded column offset.
@@ -697,7 +697,7 @@ func (t *T8Go) paintColumnExtents(centerX, centerY, radius int16) {
 	t.markDirty(centerX+radius, centerY+radius)
 
 	for offsetX := int16(0); offsetX <= radius; offsetX++ {
-		row := t.colScratch[offsetX]
+		row := t.colExtents[offsetX]
 		if row.IsEmpty() {
 			continue
 		}
@@ -838,7 +838,7 @@ func (t *T8Go) DrawEllipseFill(centerX, centerY, radiusX, radiusY int16, mask Dr
 
 	// Full ellipse fast path: compute each column's vertical extent once and
 	// paint it with a page-aligned FillVRun.
-	if (mask == DrawNone || mask == DrawAll) && radiusX < int16(len(t.colScratch)) {
+	if (mask == DrawNone || mask == DrawAll) && radiusX < int16(len(t.colExtents)) {
 		t.fillEllipse(centerX, centerY, radiusX, radiusY)
 		return
 	}
@@ -934,7 +934,7 @@ func (t *T8Go) drawEllipseFillSection(offsetX, offsetY, centerX, centerY int16, 
 // is walked once to record the vertical half-extent of each column, then every
 // column is painted exactly once.
 func (t *T8Go) fillEllipse(centerX, centerY, radiusX, radiusY int16) {
-	clear(t.colScratch)
+	clear(t.colExtents)
 
 	rx := int32(radiusX)
 	ry := int32(radiusY)
@@ -1110,7 +1110,7 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 	}
 
 	// Perimeter sampling (midpoint circle) → accumulate spans and arc endpoints.
-	clear(t.scratch)
+	clear(t.spans)
 	accum := arcAccum{bestStartAngleDiff: helpers.AngleFullCircle / 2, bestEndAngleDiff: helpers.AngleFullCircle / 2}
 
 	errorAccumulator := 1 - radius
@@ -1119,7 +1119,7 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 	offsetX := int16(0)
 	offsetY := radius
 
-	accum.arcProcessPerimeter(t.scratch, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
+	accum.arcProcessPerimeter(t.spans, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
 
 	for offsetX < offsetY {
 		if errorAccumulator >= 0 {
@@ -1131,15 +1131,15 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 		deltaX += 2
 		errorAccumulator += deltaX
 
-		accum.arcProcessPerimeter(t.scratch, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
+		accum.arcProcessPerimeter(t.spans, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
 	}
 
 	// Add radial boundaries (center → endpoints) into spans.
-	addSpan(t.scratch, centerX, centerY)
-	scanAddLineToSpans(t.scratch, centerX, centerY, accum.startEndX, accum.startEndY)
-	scanAddLineToSpans(t.scratch, centerX, centerY, accum.endEndX, accum.endEndY)
+	addSpan(t.spans, centerX, centerY)
+	scanAddLineToSpans(t.spans, centerX, centerY, accum.startEndX, accum.startEndY)
+	scanAddLineToSpans(t.spans, centerX, centerY, accum.endEndX, accum.endEndY)
 
-	t.paintSpans(t.scratch)
+	t.paintSpans(t.spans)
 }
 
 // addSpan widens the span at row yPos to include xPos.

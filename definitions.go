@@ -24,31 +24,10 @@ type IDisplay interface {
 
 // ----------
 
-// IDisplayDrawer provides a comprehensive interface for drawing operations on display devices.
-// It combines basic display management with advanced drawing capabilities including geometric shapes,
-// lines, and pixel manipulation. The interface supports both outlined and filled shapes, with
-// specialized methods for circles, ellipses, arcs, and various box types.
-//
-// Basic Operations:
-//   - Display management: get display info, buffer operations, clearing
-//   - Pixel operations: set, get, and draw individual pixels
-//   - Command execution and display updates
-//
-// Drawing Capabilities:
-//   - Lines: straight lines, vertical/horizontal lines, angled lines
-//   - Rectangles: basic boxes, rounded boxes, coordinate-based boxes (both outlined and filled)
-//   - Triangles: outlined and filled triangles
-//   - Circles: full or partial circles with quadrant masking (outlined and filled)
-//   - Ellipses: full or partial ellipses with quadrant masking (outlined and filled)
-//   - Arcs: circular arcs with start/end angles (outlined and filled)
-//
-// Coordinate System:
-//   - Uses int16 for most coordinates to support negative values and larger displays
-//   - Pixel queries use uint8 for optimization on smaller displays
-//   - Display dimensions returned as uint16
-//
-// The interface is designed to work with various display technologies and provides
-// a unified API for both simple and complex drawing operations.
+// IDisplayDrawer is the high-level graphics surface: display management plus
+// shape primitives (lines, boxes, triangles, polygons, circles, ellipses, arcs).
+// Coordinates use int16 so negative (offscreen) values are expressible;
+// pixel queries use uint8 since embedded displays rarely exceed 255 px on a side.
 type IDisplayDrawer interface {
 	GetDisplay() IDisplay
 	Size() (width, height uint16) // Size returns the display dimensions in pixels
@@ -99,10 +78,10 @@ type T8Go struct {
 	display    IDisplay   // The underlying display interface
 	width      int16      // Display width in pixels (cached)
 	height     int16      // Display height in pixels (cached)
-	scratch    []scanSpan // Reusable scan-line accumulator (sized to display height)
-	colScratch []scanSpan // Reusable per-column extent accumulator for filled circles/ellipses
-	polyXS     []int16    // Reusable x-intersection buffer for polygon fill
-	polyBuf    []int16    // Reusable per-row run storage for polygon boundary
+	spans      []scanSpan // Reusable per-row scanline accumulator for arc/triangle fills
+	colExtents []scanSpan // Reusable per-column vertical extent for filled circles/ellipses
+	crossings  []int16    // Reusable x-intersection buffer for polygon fill
+	runRows    []int16    // Reusable per-row run storage for polygon boundary
 	dirty      dirtyRect  // Dirty region tracked for partial display updates
 }
 
