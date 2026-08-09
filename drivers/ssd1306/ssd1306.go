@@ -27,7 +27,7 @@ const (
 	displayClockSuggested = 0x80 // display clock divide ratio (datasheet suggested)
 	displayOffsetNone     = 0x00 // no vertical display offset
 	startLineOffsetNone   = 0x00 // start-line register set to 0
-	segmentRemapEnable    = 0x01 // SET_SEGMENT_REMAP flag bit
+	segmentRemapEnable    = 0x01 // SetSegmentRemap flag bit
 	vcomDeselectLevel     = 0x20 // VCOMH deselect level (~0.77 * Vcc)
 )
 
@@ -37,7 +37,7 @@ const (
 type Config struct {
 	Width   uint8   // Display width in pixels (default: 128)
 	Height  uint8   // Display height in pixels (default: 64)
-	VCCMode VCCMode // VCC generation mode (default: VCC_SWITCH_CAP)
+	VCCMode VCCMode // VCC generation mode (default: VCCSwitchCap)
 }
 
 // display represents an SSD1306 OLED display instance.
@@ -78,7 +78,7 @@ func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.IDisplay
 		config.Height = 64 // Default height
 	}
 	if config.VCCMode == 0 {
-		config.VCCMode = VCC_SWITCH_CAP
+		config.VCCMode = VCCSwitchCap
 	}
 
 	bufferSize := int(config.Width) * int(config.Height) / bitsPerPixelRow
@@ -96,7 +96,7 @@ func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.IDisplay
 	}
 
 	// Initialize the display
-	if err := d.init(d.width, d.height); err != nil {
+	if err := d.init(d.height); err != nil {
 		return nil, err
 	}
 
@@ -105,15 +105,15 @@ func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.IDisplay
 
 // init initializes the display.
 // Returns an error if any command in the initialization sequence fails to send.
-func (d *display) init(width, height uint8) error {
+func (d *display) init(height uint8) error {
 	// Determine VCC-dependent settings
 	var chargePump, contrast, preCharge uint8
-	if d.vccMode == VCC_EXTERNAL {
-		chargePump = CHARGE_PUMP_SETTING_OFF
+	if d.vccMode == VCCExternal {
+		chargePump = ChargePumpSettingOff
 		contrast = 0x9F
 		preCharge = 0x22
 	} else {
-		chargePump = CHARGE_PUMP_SETTING_ON
+		chargePump = ChargePumpSettingOn
 		contrast = 0xCF
 		preCharge = 0xF1
 	}
@@ -128,26 +128,26 @@ func (d *display) init(width, height uint8) error {
 	// Build initialization sequence in pre-allocated buffer
 	cmdSeq := d.cmdBuf[:0]
 	cmdSeq = append(cmdSeq,
-		SET_DISPLAY_OFF,
-		SET_DISPLAY_CLOCK_DIVIDE_RATIO, displayClockSuggested,
-		SET_MULTIPLEX_RATIO, height-1,
-		SET_DISPLAY_OFFSET, displayOffsetNone,
-		SET_START_LINE|startLineOffsetNone,
-		CHARGE_PUMP_SETTING, chargePump,
-		SET_MEMORY_ADDRESSING_MODE, horizontalAddressingMode,
+		SetDisplayOff,
+		SetDisplayClockDivideRatio, displayClockSuggested,
+		SetMultiplexRatio, height-1,
+		SetDisplayOffset, displayOffsetNone,
+		SetStartLine|startLineOffsetNone,
+		ChargePumpSetting, chargePump,
+		SetMemoryAddressingMode, horizontalAddressingMode,
 
-		SET_SEGMENT_REMAP|segmentRemapEnable,
-		SET_COM_OUTPUT_SCAN_DIRECTION_DEC,
+		SetSegmentRemap|segmentRemapEnable,
+		SetCOMOutputScanDirectionDec,
 
-		SET_COM_PINS, comPins,
-		SET_CONTRAST, contrast,
+		SetCOMPins, comPins,
+		SetContrast, contrast,
 
-		SET_PRE_CHARGE_PERIOD, preCharge,
-		SET_VCOM_DESELECT_LEVEL, vcomDeselectLevel,
-		DISPLAY_ALL_ON_RESUME,
-		SET_NORMAL_DISPLAY,
-		DEACTIVATE_SCROLL,
-		SET_DISPLAY_ON,
+		SetPreChargePeriod, preCharge,
+		SetVCOMDeselectLevel, vcomDeselectLevel,
+		DisplayAllOnResume,
+		SetNormalDisplay,
+		DeactivateScroll,
+		SetDisplayOn,
 	)
 	return d.CommandStream(cmdSeq...)
 }
@@ -186,13 +186,13 @@ func (d *display) ClearDisplay() {
 // Returns an error if the I2C write fails.
 func (d *display) Command(cmd byte) error {
 	d.cmdBuf[0] = cmd
-	return d.bus.WriteRegister(d.address, CONTROL_CMD_SINGLE, d.cmdBuf[:1])
+	return d.bus.WriteRegister(d.address, ControlCMDSingle, d.cmdBuf[:1])
 }
 
 // CommandStream writes multiple command bytes with a single control prefix.
 // Returns an error if the I2C write fails.
 func (d *display) CommandStream(cmds ...byte) error {
-	return d.bus.WriteRegister(d.address, CONTROL_CMD_STREAM, cmds)
+	return d.bus.WriteRegister(d.address, ControlCMDStream, cmds)
 }
 
 // Display flushes the full backbuffer to the panel using horizontal addressing.
@@ -200,10 +200,10 @@ func (d *display) CommandStream(cmds ...byte) error {
 func (d *display) Display() error {
 	// Set addressing window to full screen.
 	addrSeq := d.addrBuf[:6]
-	addrSeq[0] = SET_COLUMN_ADDRESS
+	addrSeq[0] = SetColumnAddress
 	addrSeq[1] = 0x00
 	addrSeq[2] = d.width - 1
-	addrSeq[3] = SET_PAGE_ADDRESS
+	addrSeq[3] = SetPageAddress
 	addrSeq[4] = 0x00
 	addrSeq[5] = d.pageCount - 1
 
@@ -212,7 +212,7 @@ func (d *display) Display() error {
 		return err
 	}
 
-	return d.bus.WriteRegister(d.address, CONTROL_DATA_STREAM, d.buffer)
+	return d.bus.WriteRegister(d.address, ControlDataStream, d.buffer)
 }
 
 // DisplayRegion updates a rectangular region aligned to page rows.
@@ -243,10 +243,10 @@ func (d *display) DisplayRegion(x0, y0, x1, y1 int) error {
 
 	// Setup column/page window
 	addr := d.addrBuf[:6]
-	addr[0] = SET_COLUMN_ADDRESS
+	addr[0] = SetColumnAddress
 	addr[1] = byte(x0)
 	addr[2] = byte(x1)
-	addr[3] = SET_PAGE_ADDRESS
+	addr[3] = SetPageAddress
 	addr[4] = startPage
 	addr[5] = endPage
 
@@ -259,7 +259,7 @@ func (d *display) DisplayRegion(x0, y0, x1, y1 int) error {
 		rowOffset := page * d.stride
 		start := rowOffset + x0
 		end := rowOffset + x1 + 1
-		if err := d.bus.WriteRegister(d.address, CONTROL_DATA_STREAM, d.buffer[start:end]); err != nil {
+		if err := d.bus.WriteRegister(d.address, ControlDataStream, d.buffer[start:end]); err != nil {
 			return err
 		}
 	}
