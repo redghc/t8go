@@ -19,6 +19,7 @@ t8go is a lightweight, high-performance 2D graphics library specifically designe
 - **Geometric Shapes**: Perfect circles and ellipses with selective quadrant rendering
 - **Arc**: Partial circles and pie charts with configurable start/end angles (0-255° system)
 - **Triangle**: Both outlined and filled triangles with scanline-based filling
+- **Polygon**: Outlined and scanline-filled arbitrary polygons via variadic `Point` vertices
 
 ### Display Architecture
 
@@ -165,6 +166,26 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 func (t *T8Go) DrawTriangle(x1, y1, x2, y2, x3, y3 int16)
 func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16)
 ```
+
+#### Polygons
+
+Polygons accept a variable number of vertices via the `Point` type. The shape
+is closed automatically (last vertex connects back to the first one).
+
+```go
+type Point struct {
+    X, Y int16
+}
+
+func (t *T8Go) DrawPolygon(points ...Point)     // boundary of the filled region
+func (t *T8Go) DrawPolygonFill(points ...Point) // scanline-filled
+```
+
+Both functions share the same even-odd, pixel-center rasterization, so they
+always produce equivalent drawings: `DrawPolygon` draws exactly the boundary
+of the region that `DrawPolygonFill` fills, including concave and
+self-intersecting polygons. The outline is therefore always a subset of the
+fill's pixels.
 
 ### Quadrant System
 

@@ -214,6 +214,16 @@ func BenchmarkDrawEllipseFill(b *testing.B) {
 func BenchmarkDrawTriangleFill(b *testing.B) {
 	benchDraw(b, func(g t8go.IDisplayDrawer) { g.DrawTriangleFill(64, 5, 10, 50, 110, 50) })
 }
+func BenchmarkDrawPolygon(b *testing.B) {
+	benchDraw(b, func(g t8go.IDisplayDrawer) {
+		g.DrawPolygon(t8go.Point{64, 5}, t8go.Point{10, 50}, t8go.Point{110, 50}, t8go.Point{90, 20})
+	})
+}
+func BenchmarkDrawPolygonFill(b *testing.B) {
+	benchDraw(b, func(g t8go.IDisplayDrawer) {
+		g.DrawPolygonFill(t8go.Point{64, 5}, t8go.Point{10, 50}, t8go.Point{110, 50}, t8go.Point{90, 20})
+	})
+}
 func BenchmarkDrawArcFill(b *testing.B) {
 	benchDraw(b, func(g t8go.IDisplayDrawer) { g.DrawArcFill(64, 32, 30, 32, 160) })
 }

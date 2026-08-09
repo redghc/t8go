@@ -98,6 +98,37 @@ func shapeCases() []shapeCase {
 		{"triangle", func(g t8go.IDisplayDrawer) { g.DrawTriangle(64, 5, 10, 50, 110, 50) }},
 		{"trianglefill", func(g t8go.IDisplayDrawer) { g.DrawTriangleFill(64, 5, 10, 50, 110, 50) }},
 		{"trianglefill-off", func(g t8go.IDisplayDrawer) { g.DrawTriangleFill(0, 0, 20, 40, 40, 0) }},
+		{"polygon", func(g t8go.IDisplayDrawer) {
+			g.DrawPolygon(t8go.Point{64, 5}, t8go.Point{10, 50}, t8go.Point{110, 50}, t8go.Point{90, 20})
+		}},
+		{"polygonfill", func(g t8go.IDisplayDrawer) {
+			g.DrawPolygonFill(t8go.Point{64, 5}, t8go.Point{10, 50}, t8go.Point{110, 50}, t8go.Point{90, 20})
+		}},
+		{"polygon-concave", func(g t8go.IDisplayDrawer) {
+			g.DrawPolygon(t8go.Point{15, 10}, t8go.Point{90, 10},
+				t8go.Point{60, 35}, t8go.Point{105, 55}, t8go.Point{20, 55})
+		}},
+		{"polygonfill-concave", func(g t8go.IDisplayDrawer) {
+			g.DrawPolygonFill(t8go.Point{15, 10}, t8go.Point{90, 10},
+				t8go.Point{60, 35}, t8go.Point{105, 55}, t8go.Point{20, 55})
+		}},
+		{"polygon-star", func(g t8go.IDisplayDrawer) {
+			g.DrawPolygon(
+				t8go.Point{64, 62}, t8go.Point{57, 42}, t8go.Point{35, 41}, t8go.Point{53, 28},
+				t8go.Point{46, 8}, t8go.Point{64, 20}, t8go.Point{82, 8}, t8go.Point{75, 28},
+				t8go.Point{93, 41}, t8go.Point{71, 42},
+			)
+		}},
+		{"polygonfill-star", func(g t8go.IDisplayDrawer) {
+			g.DrawPolygonFill(
+				t8go.Point{64, 62}, t8go.Point{57, 42}, t8go.Point{35, 41}, t8go.Point{53, 28},
+				t8go.Point{46, 8}, t8go.Point{64, 20}, t8go.Point{82, 8}, t8go.Point{75, 28},
+				t8go.Point{93, 41}, t8go.Point{71, 42},
+			)
+		}},
+		{"polygon-offscreen", func(g t8go.IDisplayDrawer) {
+			g.DrawPolygonFill(t8go.Point{-10, -10}, t8go.Point{40, -10}, t8go.Point{40, 40}, t8go.Point{-10, 40})
+		}},
 		{"circle", func(g t8go.IDisplayDrawer) { g.DrawCircle(64, 32, 20, t8go.DrawAll) }},
 		{"circle-masked", func(g t8go.IDisplayDrawer) { g.DrawCircle(64, 32, 20, t8go.DrawTopRight) }},
 		{"circlefill", func(g t8go.IDisplayDrawer) { g.DrawCircleFill(64, 32, 20, t8go.DrawAll) }},

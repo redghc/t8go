@@ -1,6 +1,10 @@
 package t8go
 
-import "github.com/redghc/t8go/helpers"
+import (
+	"slices"
+
+	"github.com/redghc/t8go/helpers"
+)
 
 // DrawPixel sets a pixel at the specified coordinates (x, y) in the display buffer.
 // This is the most basic drawing primitive - a single point on the display.
@@ -376,6 +380,203 @@ func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16) {
 	scanAddLineToSpans(t.scratch, x3, y3, x1, y1)
 
 	t.paintSpans(t.scratch)
+}
+
+// Minimum number of vertices a polygon outline needs to enclose an area.
+const minPolygonVertices = 3
+
+// Minimum number of vertices a polygon fill needs to enclose an area.
+const minPolygonFillVertices = 3
+
+// DrawPolygon draws the boundary of the polygon connecting the given vertices
+// in order. The outline is closed automatically: the last vertex connects back
+// to the first one.
+// At least three vertices are required to enclose an area; with fewer the call
+// is a no-op. The outline is exactly the boundary of the region produced by
+// DrawPolygonFill, so both functions always draw equivalent shapes.
+func (t *T8Go) DrawPolygon(points ...Point) {
+	if len(points) < minPolygonVertices {
+		return
+	}
+
+	yMin, yMax := polygonBoundsY(points)
+	rowCount := int(yMax - yMin + 1)
+
+	// Compute the filled runs for every row so the boundary pass can check the
+	// coverage of the rows above and below.
+	offsets := make([]int, rowCount+1)
+	buffer := t.polyBuf[:0]
+	for i := range rowCount {
+		offsets[i] = len(buffer)
+		buffer = append(buffer, t.polyRuns(points, yMin+int16(i))...)
+	}
+	offsets[rowCount] = len(buffer)
+	t.polyBuf = buffer
+
+	for i := range rowCount {
+		curr := buffer[offsets[i]:offsets[i+1]]
+		var prev, next []int16
+		if i > 0 {
+			prev = buffer[offsets[i-1]:offsets[i]]
+		}
+		if i+1 < rowCount {
+			next = buffer[offsets[i+1]:offsets[i+2]]
+		}
+		t.drawPolyBoundary(prev, curr, next, yMin+int16(i))
+	}
+}
+
+// DrawPolygonFill draws a filled polygon connecting the given vertices in order.
+// The polygon is closed automatically: the last vertex connects back to the
+// first one.
+// At least three vertices are required to enclose an area; with fewer the call
+// is a no-op. Filling uses the even-odd scanline rule with pixel-center
+// sampling: for each row the edge crossings are collected, sorted and filled
+// pairwise, so concave and self-intersecting polygons are rendered correctly.
+func (t *T8Go) DrawPolygonFill(points ...Point) {
+	if len(points) < minPolygonFillVertices {
+		return
+	}
+
+	yMin, yMax := polygonBoundsY(points)
+	for y := yMin; y <= yMax; y++ {
+		runs := t.polyRuns(points, y)
+		for i := 0; i+1 < len(runs); i += 2 {
+			t.DrawHLine(runs[i], y, runs[i+1]-runs[i]+1)
+		}
+	}
+}
+
+// polyRuns returns the filled runs of the polygon on scanline y as sorted
+// [start, end] pairs, using even-odd pixel-center crossings. The returned
+// slice aliases t.polyXS and is overwritten on the next call.
+func (t *T8Go) polyRuns(points []Point, y int16) []int16 {
+	xs := t.polyXS
+	if cap(xs) < len(points) {
+		xs = make([]int16, 0, len(points))
+	}
+	xs = xs[:0]
+
+	count := len(points)
+	for i := range count {
+		p1, p2 := points[i], points[(i+1)%count]
+		if x, ok := polyCrossingStart(p1, p2, y); ok {
+			xs = append(xs, x)
+		}
+	}
+	slices.Sort(xs)
+
+	runs := xs[:0]
+	for i := 0; i+1 < len(xs); i += 2 {
+		start, end := xs[i], xs[i+1]-1
+		if end >= start {
+			runs = append(runs, start, end)
+		}
+	}
+	t.polyXS = runs
+	return runs
+}
+
+// drawPolyBoundary draws the boundary pixels of the filled runs in curr, using
+// prev and next (the filled runs of the adjacent scanlines) to determine which
+// interior pixels are exposed on their top or bottom edge.
+func (t *T8Go) drawPolyBoundary(prev, curr, next []int16, y int16) {
+	for i := 0; i+1 < len(curr); i += 2 {
+		start, end := curr[i], curr[i+1]
+		t.DrawPixel(start, y)
+		t.DrawPixel(end, y)
+		if end > start {
+			t.drawPolyExposed(start+1, end-1, prev, y)
+			t.drawPolyExposed(start+1, end-1, next, y)
+		}
+	}
+}
+
+// drawPolyExposed draws the pixels of [lo, hi] that are not covered by any of
+// the given runs, i.e. the pixels exposed on the top or bottom edge of the
+// filled region.
+func (t *T8Go) drawPolyExposed(lo, hi int16, runs []int16, y int16) {
+	x := lo
+	for i := 0; i+1 < len(runs) && x <= hi; i += 2 {
+		start, end := runs[i], runs[i+1]
+		if end < x {
+			continue
+		}
+		if start > hi {
+			break
+		}
+		if start > x {
+			t.DrawHLine(x, y, start-x)
+		}
+		if end+1 > x {
+			x = end + 1
+		}
+	}
+	if x <= hi {
+		t.DrawHLine(x, y, hi-x+1)
+	}
+}
+
+// polygonBoundsY returns the min and max Y coordinate of the given vertices.
+func polygonBoundsY(points []Point) (int16, int16) {
+	yMin, yMax := points[0].Y, points[0].Y
+	for _, p := range points[1:] {
+		if p.Y < yMin {
+			yMin = p.Y
+		}
+		if p.Y > yMax {
+			yMax = p.Y
+		}
+	}
+	return yMin, yMax
+}
+
+// scanPixelScale is the scale factor used for pixel-center scanline sampling.
+const scanPixelScale = 2
+
+// polyCrossingStart returns the x coordinate of the first pixel whose center
+// lies to the right of the intersection of the edge p1-p2 with the center of
+// scanline y, and whether the edge crosses that scanline. Horizontal edges
+// never cross. The half-open interval [lo, hi) guarantees that a vertex shared
+// by two edges is counted exactly once.
+func polyCrossingStart(p1, p2 Point, y int16) (int16, bool) {
+	x1, y1 := p1.X, p1.Y
+	x2, y2 := p2.X, p2.Y
+	if y1 == y2 {
+		return 0, false
+	}
+
+	lo, hi := y1, y2
+	xLo, xHi := x1, x2
+	if lo > hi {
+		lo, hi = hi, lo
+		xLo, xHi = xHi, xLo
+	}
+	if y < lo || y >= hi {
+		return 0, false
+	}
+
+	// Crossing at the pixel center y+0.5, expressed in integer math:
+	//   x = xLo + (2*(y-lo)+1) * (xHi-xLo) / (2*(hi-lo))
+	// The first filled pixel is the one whose center is above the crossing:
+	//   floor(x - 0.5) + 1 = xLo + floor((2*num-den)/(2*den)) + 1
+	dx := int32(xHi - xLo)
+	dy := int32(hi - lo)
+	num := (scanPixelScale*int64(y-lo) + 1) * int64(dx)
+	den := scanPixelScale * int64(dy)
+	pixel := int64(xLo) + floorDiv(scanPixelScale*num-den, scanPixelScale*den) + 1
+	// The result is bounded by the vertex coordinates (display-size), so the
+	// narrowing cast cannot overflow in practice.
+	return int16(pixel), true //nolint:gosec // G115: safe, value bounded by vertex range
+}
+
+// floorDiv divides a by b rounding toward negative infinity (b must be > 0).
+func floorDiv(a, b int64) int64 {
+	q := a / b
+	if a%b != 0 && a < 0 {
+		q--
+	}
+	return q
 }
 
 // DrawCircle draws an outlined circle centered at (centerX, centerY) with the specified radius.

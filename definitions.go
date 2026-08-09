@@ -79,6 +79,9 @@ type IDisplayDrawer interface {
 	DrawTriangle(x1, y1, x2, y2, x3, y3 int16)
 	DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16)
 
+	DrawPolygon(points ...Point)
+	DrawPolygonFill(points ...Point)
+
 	DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants)
 	DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants)
 
@@ -98,6 +101,8 @@ type T8Go struct {
 	height     int16      // Display height in pixels (cached)
 	scratch    []scanSpan // Reusable scanline accumulator (sized to display height)
 	colScratch []scanSpan // Reusable per-column extent accumulator for filled circles/ellipses
+	polyXS     []int16    // Reusable x-intersection buffer for polygon fill
+	polyBuf    []int16    // Reusable per-row run storage for polygon boundary
 	dirty      dirtyRect  // Dirty region tracked for partial display updates
 }
 
@@ -108,6 +113,14 @@ var _ IDisplayDrawer = (*T8Go)(nil) // Ensure T8Go implements DisplayDrawer
 type dirtyRect struct {
 	valid          bool
 	x0, y0, x1, y1 int16
+}
+
+// ----------
+
+// Point represents a pixel coordinate in the display space.
+// X and Y are 16-bit signed to allow negative (offscreen) coordinates.
+type Point struct {
+	X, Y int16
 }
 
 // ----------
