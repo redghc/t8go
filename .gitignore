@@ -1,3 +1,7 @@
 dummy
 benchmarks
+tmp
 .vscode
+go.work
+go.work.sum
+display.bmp

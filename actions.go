@@ -1,6 +1,10 @@
 package t8go
 
-import "github.com/redghc/t8go/helpers"
+import (
+	"slices"
+
+	"github.com/redghc/t8go/helpers"
+)
 
 // DrawPixel sets a pixel at the specified coordinates (x, y) in the display buffer.
 // This is the most basic drawing primitive - a single point on the display.
@@ -51,11 +55,15 @@ func (t *T8Go) DrawLine(startX, startY, endX, endY int16) {
 	errorAccumulator := deltaX / 2
 	currentYPos := startY
 
+	// The line's pixels stay within the bounding box of its endpoints.
+	t.markDirty(startX, startY)
+	t.markDirty(endX, endY)
+
 	for currentXPos := startX; currentXPos <= endX; currentXPos++ {
 		if isSteep {
-			t.SetPixel(currentYPos, currentXPos, true)
+			t.setPixelOn(currentYPos, currentXPos)
 		} else {
-			t.SetPixel(currentXPos, currentYPos, true)
+			t.setPixelOn(currentXPos, currentYPos)
 		}
 
 		errorAccumulator -= deltaY
@@ -76,9 +84,24 @@ func (t *T8Go) DrawVLine(originX, originY, length int16) {
 	}
 
 	uLength := helpers.Abs(length)
-	for deltaY := range uLength {
-		t.SetPixel(originX, originY+deltaY*direction, true)
+	y0 := originY
+	y1 := originY + (uLength-1)*direction
+	if y0 > y1 {
+		y0, y1 = y1, y0
 	}
+
+	// Clip to the visible area before writing.
+	if originX < 0 || originX >= t.width {
+		return
+	}
+	y0, y1, ok := helpers.ClipSpan(y0, y1, t.height)
+	if !ok {
+		return
+	}
+
+	t.markDirty(originX, y0)
+	t.markDirty(originX, y1)
+	t.display.FillVRun(originX, y0, y1, true)
 }
 
 // DrawHLine draws a horizontal line starting at (originX, originY) with the specified length.
@@ -91,9 +114,24 @@ func (t *T8Go) DrawHLine(originX, originY, length int16) {
 	}
 
 	uLength := helpers.Abs(length)
-	for deltaX := range uLength {
-		t.SetPixel(originX+deltaX*direction, originY, true)
+	x0 := originX
+	x1 := originX + (uLength-1)*direction
+	if x0 > x1 {
+		x0, x1 = x1, x0
 	}
+
+	// Clip to the visible area before writing.
+	if originY < 0 || originY >= t.height {
+		return
+	}
+	x0, x1, ok := helpers.ClipSpan(x0, x1, t.width)
+	if !ok {
+		return
+	}
+
+	t.markDirty(x0, originY)
+	t.markDirty(x1, originY)
+	t.display.FillHRun(x0, x1, originY, true)
 }
 
 // DrawLineAngle draws a line from (originX, originY) with the specified length and angle.
@@ -202,15 +240,28 @@ func (t *T8Go) DrawBoxFill(originX, originY, width, height int16) {
 		return
 	}
 
+	uWidth := helpers.Abs(width)
 	uHeight := helpers.Abs(height)
 
-	for offsetY := range uHeight {
-		t.DrawHLine(
-			originX,
-			originY+offsetY*directionY,
-			width,
-		)
+	x0 := originX
+	x1 := originX + (uWidth-1)*directionX
+	y0 := originY
+	y1 := originY + (uHeight-1)*directionY
+
+	t.fillRect(x0, y0, x1, y1)
+}
+
+// fillRect sets the inclusive rectangle (x0,y0)-(x1,y1), clipped to the
+// visible area, and marks it dirty. Coordinates are normalized internally.
+func (t *T8Go) fillRect(x0, y0, x1, y1 int16) {
+	x0, y0, x1, y1, ok := helpers.ClipRect(x0, y0, x1, y1, t.width, t.height)
+	if !ok {
+		return
 	}
+
+	t.markDirty(x0, y0)
+	t.markDirty(x1, y1)
+	t.display.FillRect(x0, y0, x1, y1, true)
 }
 
 // DrawBoxFillCoords draws a filled rectangle between two corners:
@@ -284,8 +335,6 @@ func (t *T8Go) DrawTriangle(x1, y1, x2, y2, x3, y3 int16) {
 // The triangle is filled using scanline rendering to ensure complete coverage
 // with inclusive edges and no gaps.
 func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16) {
-	t.DrawTriangle(x1, y1, x2, y2, x3, y3)
-
 	// Degenerate horizontal line (all y equal)
 	if y1 == y2 && y2 == y3 {
 		left := min(x1, min(x2, x3))
@@ -294,41 +343,229 @@ func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16) {
 		return
 	}
 
-	minY := min(y1, min(y2, y3))
-	maxY := max(y1, max(y2, y3))
+	// Accumulate edge pixels into scanline spans (reused scratch buffer).
+	// The edge spans already cover the outline pixels, so no separate
+	// outline pass is needed.
+	clear(t.spans)
+	scanAddLineToSpans(t.spans, x1, y1, x2, y2)
+	scanAddLineToSpans(t.spans, x2, y2, x3, y3)
+	scanAddLineToSpans(t.spans, x3, y3, x1, y1)
 
-	// Accumulate edge pixels into spans keyed by Y (map value's zero state has initialized=false).
-	spans := make(map[int16]scanSpan, int(maxY-minY)+1)
-	scanAddLineToSpans(spans, x1, y1, x2, y2)
-	scanAddLineToSpans(spans, x2, y2, x3, y3)
-	scanAddLineToSpans(spans, x3, y3, x1, y1)
+	t.paintSpans(t.spans)
+}
 
-	for y := minY; y <= maxY; y++ {
-		row := spans[y]
-		if !row.initialized {
+// minPolygonVertices is the minimum number of vertices a polygon (outline or
+// fill) needs to enclose an area.
+const minPolygonVertices = 3
+
+// DrawPolygon draws the boundary of the polygon connecting the given vertices
+// in order. The outline is closed automatically: the last vertex connects back
+// to the first one.
+// At least three vertices are required to enclose an area; with fewer the call
+// is a no-op. The outline is exactly the boundary of the region produced by
+// DrawPolygonFill, so both functions always draw equivalent shapes.
+func (t *T8Go) DrawPolygon(points ...Point) {
+	if len(points) < minPolygonVertices {
+		return
+	}
+
+	yMin, yMax := polygonBoundsY(points)
+	rowCount := int(yMax - yMin + 1)
+
+	// Compute the filled runs for every row so the boundary pass can check the
+	// coverage of the rows above and below.
+	offsets := make([]int, rowCount+1)
+	buffer := t.runRows[:0]
+	for i := range rowCount {
+		offsets[i] = len(buffer)
+		buffer = append(buffer, t.polyRuns(points, yMin+int16(i))...)
+	}
+	offsets[rowCount] = len(buffer)
+	t.runRows = buffer
+
+	for i := range rowCount {
+		curr := buffer[offsets[i]:offsets[i+1]]
+		var prev, next []int16
+		if i > 0 {
+			prev = buffer[offsets[i-1]:offsets[i]]
+		}
+		if i+1 < rowCount {
+			next = buffer[offsets[i+1]:offsets[i+2]]
+		}
+		t.drawPolyBoundary(prev, curr, next, yMin+int16(i))
+	}
+}
+
+// DrawPolygonFill draws a filled polygon connecting the given vertices in order.
+// The polygon is closed automatically: the last vertex connects back to the
+// first one.
+// At least three vertices are required to enclose an area; with fewer the call
+// is a no-op. Filling uses the even-odd scanline rule with pixel-center
+// sampling: for each row the edge crossings are collected, sorted and filled
+// pairwise, so concave and self-intersecting polygons are rendered correctly.
+func (t *T8Go) DrawPolygonFill(points ...Point) {
+	if len(points) < minPolygonVertices {
+		return
+	}
+
+	yMin, yMax := polygonBoundsY(points)
+	for y := yMin; y <= yMax; y++ {
+		runs := t.polyRuns(points, y)
+		for i := 0; i+1 < len(runs); i += 2 {
+			t.DrawHLine(runs[i], y, runs[i+1]-runs[i]+1)
+		}
+	}
+}
+
+// polyRuns returns the filled runs of the polygon on scanline y as sorted
+// [start, end] pairs, using even-odd pixel-center crossings. The returned
+// slice aliases t.crossings and is overwritten on the next call.
+func (t *T8Go) polyRuns(points []Point, y int16) []int16 {
+	xs := t.crossings
+	if cap(xs) < len(points) {
+		xs = make([]int16, 0, len(points))
+	}
+	xs = xs[:0]
+
+	count := len(points)
+	for i := range count {
+		p1, p2 := points[i], points[(i+1)%count]
+		if x, ok := polyCrossingStart(p1, p2, y); ok {
+			xs = append(xs, x)
+		}
+	}
+	slices.Sort(xs)
+
+	runs := xs[:0]
+	for i := 0; i+1 < len(xs); i += 2 {
+		start, end := xs[i], xs[i+1]-1
+		if end >= start {
+			runs = append(runs, start, end)
+		}
+	}
+	t.crossings = runs
+	return runs
+}
+
+// drawPolyBoundary draws the boundary pixels of the filled runs in curr, using
+// prev and next (the filled runs of the adjacent scanlines) to determine which
+// interior pixels are exposed on their top or bottom edge.
+func (t *T8Go) drawPolyBoundary(prev, curr, next []int16, y int16) {
+	for i := 0; i+1 < len(curr); i += 2 {
+		start, end := curr[i], curr[i+1]
+		t.DrawPixel(start, y)
+		t.DrawPixel(end, y)
+		if end > start {
+			t.drawPolyExposed(start+1, end-1, prev, y)
+			t.drawPolyExposed(start+1, end-1, next, y)
+		}
+	}
+}
+
+// drawPolyExposed draws the pixels of [lo, hi] that are not covered by any of
+// the given runs, i.e. the pixels exposed on the top or bottom edge of the
+// filled region.
+func (t *T8Go) drawPolyExposed(lo, hi int16, runs []int16, y int16) {
+	x := lo
+	for i := 0; i+1 < len(runs) && x <= hi; i += 2 {
+		start, end := runs[i], runs[i+1]
+		if end < x {
 			continue
 		}
-		startXPos, endXPos := row.minX, row.maxX
-		if startXPos > endXPos {
-			startXPos, endXPos = endXPos, startXPos
+		if start > hi {
+			break
 		}
-		t.DrawHLine(startXPos, y, endXPos-startXPos+1)
+		if start > x {
+			t.DrawHLine(x, y, start-x)
+		}
+		if end+1 > x {
+			x = end + 1
+		}
 	}
+	if x <= hi {
+		t.DrawHLine(x, y, hi-x+1)
+	}
+}
+
+// polygonBoundsY returns the minimum and maximum Y coordinates of the given
+// vertices, as `yMin` and `yMax`.
+func polygonBoundsY(points []Point) (int16, int16) {
+	yMin, yMax := points[0].Y, points[0].Y
+	for _, p := range points[1:] {
+		if p.Y < yMin {
+			yMin = p.Y
+		}
+		if p.Y > yMax {
+			yMax = p.Y
+		}
+	}
+	return yMin, yMax
+}
+
+// scanPixelScale is the scale factor used for pixel-center scanline sampling.
+const scanPixelScale = 2
+
+// polyCrossingStart returns `x`, the coordinate of the first pixel whose center
+// lies to the right of the intersection of the edge p1-p2 with the center of
+// scanline y, and `ok`, whether the edge crosses that scanline. Horizontal
+// edges never cross. The half-open interval [lo, hi) guarantees that a vertex
+// shared by two edges is counted exactly once.
+func polyCrossingStart(p1, p2 Point, y int16) (int16, bool) {
+	x1, y1 := p1.X, p1.Y
+	x2, y2 := p2.X, p2.Y
+	if y1 == y2 {
+		return 0, false
+	}
+
+	lo, hi := y1, y2
+	xLo, xHi := x1, x2
+	if lo > hi {
+		lo, hi = hi, lo
+		xLo, xHi = xHi, xLo
+	}
+	if y < lo || y >= hi {
+		return 0, false
+	}
+
+	// Crossing at the pixel center y+0.5, expressed in integer math:
+	//   x = xLo + (2*(y-lo)+1) * (xHi-xLo) / (2*(hi-lo))
+	// The first filled pixel is the one whose center is above the crossing:
+	//   floor(x - 0.5) + 1 = xLo + floor((2*num-den)/(2*den)) + 1
+	dx := int32(xHi - xLo)
+	dy := int32(hi - lo)
+	num := (scanPixelScale*int64(y-lo) + 1) * int64(dx)
+	den := scanPixelScale * int64(dy)
+	pixel := int64(xLo) + floorDiv(scanPixelScale*num-den, scanPixelScale*den) + 1
+	// The result is bounded by the vertex coordinates (display-size), so the
+	// narrowing cast cannot overflow in practice.
+	return int16(pixel), true
+}
+
+// floorDiv divides a by b rounding toward negative infinity (b must be > 0).
+func floorDiv(a, b int64) int64 {
+	q := a / b
+	if a%b != 0 && a < 0 {
+		q--
+	}
+	return q
 }
 
 // DrawCircle draws an outlined circle centered at (centerX, centerY) with the specified radius.
 // The circle diameter will be 2*radius + 1 pixels.
 // The mask parameter controls which quadrants are drawn using DrawQuadrants flags.
-// Use DrawNone or DrawAll to draw the complete circle.
+// Use DrawAll to draw the complete circle.
 func (t *T8Go) DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants) {
 	if radius <= 0 {
 		return
 	}
 
+	t.markDirty(centerX-radius, centerY-radius)
+	t.markDirty(centerX+radius, centerY+radius)
+
 	// Midpoint circle algorithm with integer arithmetic.
-	errorAccumulator := int16(1 - radius)
+	errorAccumulator := 1 - radius
 	deltaX := int16(1)
-	deltaY := int16(-2 * radius)
+	deltaY := -2 * radius
 	offsetX := int16(0)
 	offsetY := radius
 
@@ -352,35 +589,43 @@ func (t *T8Go) DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants) {
 // filtered by the mask to draw only the selected quadrants.
 func (t *T8Go) drawCircleSection(offsetX, offsetY, centerX, centerY int16, mask DrawQuadrants) {
 	if mask.has(DrawTopRight) {
-		t.DrawPixel(centerX+offsetX, centerY-offsetY)
-		t.DrawPixel(centerX+offsetY, centerY-offsetX)
+		t.setPixelOn(centerX+offsetX, centerY-offsetY)
+		t.setPixelOn(centerX+offsetY, centerY-offsetX)
 	}
 	if mask.has(DrawTopLeft) {
-		t.DrawPixel(centerX-offsetX, centerY-offsetY)
-		t.DrawPixel(centerX-offsetY, centerY-offsetX)
+		t.setPixelOn(centerX-offsetX, centerY-offsetY)
+		t.setPixelOn(centerX-offsetY, centerY-offsetX)
 	}
 	if mask.has(DrawBottomRight) {
-		t.DrawPixel(centerX+offsetX, centerY+offsetY)
-		t.DrawPixel(centerX+offsetY, centerY+offsetX)
+		t.setPixelOn(centerX+offsetX, centerY+offsetY)
+		t.setPixelOn(centerX+offsetY, centerY+offsetX)
 	}
 	if mask.has(DrawBottomLeft) {
-		t.DrawPixel(centerX-offsetX, centerY+offsetY)
-		t.DrawPixel(centerX-offsetY, centerY+offsetX)
+		t.setPixelOn(centerX-offsetX, centerY+offsetY)
+		t.setPixelOn(centerX-offsetY, centerY+offsetX)
 	}
 }
 
 // DrawCircleFill draws a filled circle centered at (centerX, centerY) with the specified radius.
 // The mask parameter controls which quadrants are filled using DrawQuadrants flags.
-// Use DrawNone or DrawAll to fill the complete circle disc.
+// Use DrawAll to fill the complete circle disc.
 func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants) {
 	if radius <= 0 {
 		return
 	}
 
+	// Full disc fast path: compute each column's vertical extent once and
+	// paint it with a page-aligned FillVRun, instead of 8 overlapping
+	// vertical runs per perimeter step.
+	if mask == DrawAll && radius < int16(len(t.colExtents)) {
+		t.fillCircle(centerX, centerY, radius)
+		return
+	}
+
 	// Midpoint circle algorithm with integer arithmetic.
-	errorAccumulator := int16(1 - radius)
+	errorAccumulator := 1 - radius
 	deltaX := int16(1)
-	deltaY := int16(-2 * radius)
+	deltaY := -2 * radius
 	offsetX := int16(0)
 	offsetY := radius
 
@@ -397,6 +642,74 @@ func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants
 		errorAccumulator += deltaX
 
 		t.drawCircleFillSection(offsetX, offsetY, centerX, centerY, mask)
+	}
+}
+
+// fillCircle fills a complete disc. The midpoint perimeter is walked once to
+// record the vertical half-extent of each column, then every column is painted
+// exactly once.
+func (t *T8Go) fillCircle(centerX, centerY, radius int16) {
+	clear(t.colExtents)
+
+	errorAccumulator := 1 - radius
+	deltaX := int16(1)
+	deltaY := -2 * radius
+	offsetX := int16(0)
+	offsetY := radius
+
+	t.recordCircleExtent(offsetX, offsetY)
+	for offsetX < offsetY {
+		if errorAccumulator >= 0 {
+			offsetY--
+			deltaY += 2
+			errorAccumulator += deltaY
+		}
+		offsetX++
+		deltaX += 2
+		errorAccumulator += deltaX
+
+		t.recordCircleExtent(offsetX, offsetY)
+	}
+
+	t.paintColumnExtents(centerX, centerY, radius)
+}
+
+// recordCircleExtent stores the disc's vertical half-extent for the columns at
+// offsets offsetX and offsetY.
+func (t *T8Go) recordCircleExtent(offsetX, offsetY int16) {
+	t.setColExtent(offsetX, offsetY)
+	t.setColExtent(offsetY, offsetX)
+}
+
+// setColExtent records (or grows) the vertical half-extent for column offset.
+func (t *T8Go) setColExtent(offset, extent int16) {
+	if offset < 0 || int(offset) >= len(t.colExtents) {
+		return
+	}
+	row := t.colExtents[offset]
+	row.AddPoint(extent)
+	t.colExtents[offset] = row
+}
+
+// paintColumnExtents fills one vertical run per recorded column offset.
+func (t *T8Go) paintColumnExtents(centerX, centerY, radius int16) {
+	t.markDirty(centerX-radius, centerY-radius)
+	t.markDirty(centerX+radius, centerY+radius)
+
+	for offsetX := int16(0); offsetX <= radius; offsetX++ {
+		row := t.colExtents[offsetX]
+		if row.IsEmpty() {
+			continue
+		}
+		half := row.maxX
+		y0 := centerY - half
+		height := 2*half + 1
+		if offsetX == 0 {
+			t.DrawVLine(centerX, y0, height)
+		} else {
+			t.DrawVLine(centerX+offsetX, y0, height)
+			t.DrawVLine(centerX-offsetX, y0, height)
+		}
 	}
 }
 
@@ -424,12 +737,15 @@ func (t *T8Go) drawCircleFillSection(offsetX, offsetY, centerX, centerY int16, m
 // DrawEllipse draws an outlined ellipse centered at (centerX, centerY) with specified radii.
 // The radiusX and radiusY parameters define the horizontal and vertical extents.
 // The mask parameter controls which quadrants are drawn using DrawQuadrants flags.
-// Use DrawNone or DrawAll to draw the complete ellipse outline.
+// Use DrawAll to draw the complete ellipse outline.
 // No operation is performed if either radius is less than or equal to zero.
 func (t *T8Go) DrawEllipse(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants) {
 	if radiusX <= 0 || radiusY <= 0 {
 		return
 	}
+
+	t.markDirty(centerX-radiusX, centerY-radiusY)
+	t.markDirty(centerX+radiusX, centerY+radiusY)
 
 	// Use int32 internally to avoid overflow on products.
 	rx := int32(radiusX)
@@ -497,26 +813,33 @@ func (t *T8Go) drawEllipseSection(offsetX, offsetY, centerX, centerY int16, mask
 		return
 	}
 	if mask.has(DrawTopRight) {
-		t.DrawPixel(centerX+offsetX, centerY-offsetY)
+		t.setPixelOn(centerX+offsetX, centerY-offsetY)
 	}
 	if mask.has(DrawTopLeft) {
-		t.DrawPixel(centerX-offsetX, centerY-offsetY)
+		t.setPixelOn(centerX-offsetX, centerY-offsetY)
 	}
 	if mask.has(DrawBottomRight) {
-		t.DrawPixel(centerX+offsetX, centerY+offsetY)
+		t.setPixelOn(centerX+offsetX, centerY+offsetY)
 	}
 	if mask.has(DrawBottomLeft) {
-		t.DrawPixel(centerX-offsetX, centerY+offsetY)
+		t.setPixelOn(centerX-offsetX, centerY+offsetY)
 	}
 }
 
 // DrawEllipseFill draws a filled ellipse centered at (centerX, centerY) with specified radii.
 // The radiusX and radiusY parameters define the horizontal and vertical extents.
 // The mask parameter controls which quadrants are filled using DrawQuadrants flags.
-// Use DrawNone or DrawAll to fill the complete ellipse area.
+// Use DrawAll to fill the complete ellipse area.
 // No operation is performed if either radius is less than or equal to zero.
 func (t *T8Go) DrawEllipseFill(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants) {
 	if radiusX <= 0 || radiusY <= 0 {
+		return
+	}
+
+	// Full ellipse fast path: compute each column's vertical extent once and
+	// paint it with a page-aligned FillVRun.
+	if mask == DrawAll && radiusX < int16(len(t.colExtents)) {
+		t.fillEllipse(centerX, centerY, radiusX, radiusY)
 		return
 	}
 
@@ -607,6 +930,79 @@ func (t *T8Go) drawEllipseFillSection(offsetX, offsetY, centerX, centerY int16, 
 	}
 }
 
+// fillEllipse fills a complete ellipse. The midpoint perimeter (both regions)
+// is walked once to record the vertical half-extent of each column, then every
+// column is painted exactly once.
+func (t *T8Go) fillEllipse(centerX, centerY, radiusX, radiusY int16) {
+	clear(t.colExtents)
+
+	rx := int32(radiusX)
+	ry := int32(radiusY)
+	rx2 := rx * rx
+	ry2 := ry * ry
+	rx2x2 := rx2 * 2
+	ry2x2 := ry2 * 2
+
+	// Region 1 (horizontal-dominant).
+	offsetX := int32(radiusX)
+	offsetY := int32(0)
+	deltaXChange := (1 - 2*int32(radiusX)) * ry2
+	deltaYChange := rx2
+	errorAccumulator := int32(0)
+	stopX := ry2x2 * int32(radiusX)
+	stopY := int32(0)
+
+	for stopX >= stopY {
+		t.recordEllipseExtent(int16(offsetX), int16(offsetY))
+
+		offsetY++
+		stopY += rx2x2
+		errorAccumulator += deltaYChange
+		deltaYChange += rx2x2
+
+		if 2*errorAccumulator+deltaXChange > 0 {
+			offsetX--
+			stopX -= ry2x2
+			errorAccumulator += deltaXChange
+			deltaXChange += ry2x2
+		}
+	}
+
+	// Region 2 (vertical-dominant).
+	offsetX = 0
+	offsetY = int32(radiusY)
+	deltaXChange = ry2
+	deltaYChange = (1 - 2*int32(radiusY)) * rx2
+	errorAccumulator = 0
+	stopX = 0
+	stopY = rx2x2 * int32(radiusY)
+
+	for stopX <= stopY {
+		t.recordEllipseExtent(int16(offsetX), int16(offsetY))
+
+		offsetX++
+		stopX += ry2x2
+		errorAccumulator += deltaXChange
+		deltaXChange += ry2x2
+
+		if 2*errorAccumulator+deltaYChange > 0 {
+			offsetY--
+			stopY -= rx2x2
+			errorAccumulator += deltaYChange
+			deltaYChange += rx2x2
+		}
+	}
+
+	t.paintColumnExtents(centerX, centerY, radiusX)
+}
+
+// recordEllipseExtent stores the ellipse's vertical half-extent for the column
+// at offset offsetX. Unlike the circle, the fill only covers the cx±offsetX
+// column family, so no symmetric offsetY record is needed.
+func (t *T8Go) recordEllipseExtent(offsetX, offsetY int16) {
+	t.setColExtent(offsetX, offsetY)
+}
+
 // DrawArc draws an outlined arc (partial circle) centered at (centerX, centerY) with the specified radius.
 // Angles are expressed in 0-255 units where 0=0°, 64=90°, 128=180°, 192=270°.
 // The arc is rendered from angleStart (inclusive) to angleEnd (exclusive).
@@ -631,9 +1027,9 @@ func (t *T8Go) DrawArc(centerX, centerY, radius int16, angleStart, angleEnd uint
 	}
 
 	// Midpoint circle algorithm (integer arithmetic).
-	errorAccumulator := int16(1 - radius)
+	errorAccumulator := 1 - radius
 	deltaX := int16(1)
-	deltaY := int16(-2 * radius)
+	deltaY := -2 * radius
 	offsetX := int16(0)
 	offsetY := radius
 
@@ -661,14 +1057,14 @@ func (t *T8Go) drawArcSection(offsetX, offsetY, centerX, centerY int16, angleSta
 	baseOctantAngle := helpers.ApproxAtanUnit64(offsetX, offsetY) // uint8 in [0..64]
 
 	// Compose angles (0..255) for the 8-way symmetry. All done in uint8 space.
-	a0 := baseOctantAngle                      // (+y, -x) →   0.. 64
-	a1 := 64 - baseOctantAngle                 // (+x, -y) →   0.. 64
-	a2 := 64 + baseOctantAngle                 // (-x, -y) →  64..128
-	a3 := 128 - baseOctantAngle                // (-y, -x) →  64..128
-	a4 := 128 + baseOctantAngle                // (-y, +x) → 128..192
-	a5 := 192 - baseOctantAngle                // (-x, +y) → 128..192
-	a6 := 192 + baseOctantAngle                // (+x, +y) → 192..256
-	a7 := uint8(256 - uint16(baseOctantAngle)) // (+y, +x) → wrap to 0..255
+	a0 := baseOctantAngle                                          // (+y, -x) →   0.. 64
+	a1 := helpers.AngleQuarterTurn - baseOctantAngle               // (+x, -y) →   0.. 64
+	a2 := helpers.AngleQuarterTurn + baseOctantAngle               // (-x, -y) →  64..128
+	a3 := helpers.AngleHalfTurn - baseOctantAngle                  // (-y, -x) →  64..128
+	a4 := helpers.AngleHalfTurn + baseOctantAngle                  // (-y, +x) → 128..192
+	a5 := helpers.AngleThreeQuarterTurn - baseOctantAngle          // (-x, +y) → 128..192
+	a6 := helpers.AngleThreeQuarterTurn + baseOctantAngle          // (+x, +y) → 192..256
+	a7 := uint8(helpers.AngleFullCircle - uint16(baseOctantAngle)) // (+y, +x) → wrap to 0..255
 
 	// Only plot points whose angle falls inside [angleStart, angleEnd).
 	// If the caller asked for a full arc, this function is not invoked (fast-path above).
@@ -714,16 +1110,16 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 	}
 
 	// Perimeter sampling (midpoint circle) → accumulate spans and arc endpoints.
-	spans := make(map[int16]scanSpan, int(radius)*2+3)
-	accum := arcAccum{bestStartAngleDiff: 255, bestEndAngleDiff: 255}
+	clear(t.spans)
+	accum := arcAccum{bestStartAngleDiff: helpers.AngleFullCircle / 2, bestEndAngleDiff: helpers.AngleFullCircle / 2}
 
-	errorAccumulator := int16(1 - radius)
+	errorAccumulator := 1 - radius
 	deltaX := int16(1)
-	deltaY := int16(-2 * radius)
+	deltaY := -2 * radius
 	offsetX := int16(0)
 	offsetY := radius
 
-	accum.arcProcessPerimeter(spans, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
+	accum.arcProcessPerimeter(t.spans, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
 
 	for offsetX < offsetY {
 		if errorAccumulator >= 0 {
@@ -735,16 +1131,32 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 		deltaX += 2
 		errorAccumulator += deltaX
 
-		accum.arcProcessPerimeter(spans, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
+		accum.arcProcessPerimeter(t.spans, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
 	}
 
 	// Add radial boundaries (center → endpoints) into spans.
-	updateSpan(spans, centerX, centerY)
-	scanAddLineToSpans(spans, centerX, centerY, accum.startEndX, accum.startEndY)
-	scanAddLineToSpans(spans, centerX, centerY, accum.endEndX, accum.endEndY)
+	addSpan(t.spans, centerX, centerY)
+	scanAddLineToSpans(t.spans, centerX, centerY, accum.startEndX, accum.startEndY)
+	scanAddLineToSpans(t.spans, centerX, centerY, accum.endEndX, accum.endEndY)
 
-	// Paint consolidated spans.
-	for yPos, row := range spans {
+	t.paintSpans(t.spans)
+}
+
+// addSpan widens the span at row yPos to include xPos.
+// Out-of-bounds rows are ignored.
+func addSpan(spans []scanSpan, xPos, yPos int16) {
+	if yPos < 0 || int(yPos) >= len(spans) {
+		return
+	}
+	row := spans[yPos]
+	row.AddPoint(xPos)
+	spans[yPos] = row
+}
+
+// paintSpans fills every scanline span with a horizontal run, skipping empty rows.
+func (t *T8Go) paintSpans(spans []scanSpan) {
+	for yPos := range spans {
+		row := spans[yPos]
 		if row.IsEmpty() {
 			continue
 		}
@@ -752,20 +1164,12 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 		if startXPos > endXPos {
 			startXPos, endXPos = endXPos, startXPos
 		}
-		length := endXPos - startXPos + 1
-		t.DrawHLine(startXPos, yPos, length)
+		t.DrawHLine(startXPos, int16(yPos), endXPos-startXPos+1)
 	}
 }
 
-// updateSpan widens the span at (yPos) to include xPos.
-func updateSpan(spans map[int16]scanSpan, xPos, yPos int16) {
-	row := spans[yPos]
-	row.AddPoint(xPos)
-	spans[yPos] = row
-}
-
-// scanAddLineToSpans rasterizes a line into spans using Bresenham rules (no clipping).
-func scanAddLineToSpans(spans map[int16]scanSpan, x0, y0, x1, y1 int16) {
+// scanAddLineToSpans rasterizes a line into spans using Bresenham rules.
+func scanAddLineToSpans(spans []scanSpan, x0, y0, x1, y1 int16) {
 	// Vertical
 	if x0 == x1 {
 		startYPos, endYPos := y0, y1
@@ -773,7 +1177,7 @@ func scanAddLineToSpans(spans map[int16]scanSpan, x0, y0, x1, y1 int16) {
 			startYPos, endYPos = endYPos, startYPos
 		}
 		for currentYPos := startYPos; currentYPos <= endYPos; currentYPos++ {
-			updateSpan(spans, x0, currentYPos)
+			addSpan(spans, x0, currentYPos)
 		}
 		return
 	}
@@ -784,7 +1188,7 @@ func scanAddLineToSpans(spans map[int16]scanSpan, x0, y0, x1, y1 int16) {
 			startXPos, endXPos = endXPos, startXPos
 		}
 		for currentXPos := startXPos; currentXPos <= endXPos; currentXPos++ {
-			updateSpan(spans, currentXPos, y0)
+			addSpan(spans, currentXPos, y0)
 		}
 		return
 	}
@@ -809,9 +1213,9 @@ func scanAddLineToSpans(spans map[int16]scanSpan, x0, y0, x1, y1 int16) {
 
 	for currentXPos := x0; currentXPos <= x1; currentXPos++ {
 		if steep {
-			updateSpan(spans, currentYPos, currentXPos)
+			addSpan(spans, currentYPos, currentXPos)
 		} else {
-			updateSpan(spans, currentXPos, currentYPos)
+			addSpan(spans, currentXPos, currentYPos)
 		}
 		errorAccumulator -= deltaY
 		if errorAccumulator < 0 {

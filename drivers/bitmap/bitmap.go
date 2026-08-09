@@ -5,9 +5,23 @@ package bitmap
 
 import (
 	"encoding/binary"
+	"io"
 	"os"
 
 	"github.com/redghc/t8go"
+)
+
+// BMP file format constants.
+const (
+	bitsPerPixelRow   = 8  // monochrome pixels per buffer byte
+	bitOffsetMask     = 7  // masks the bit offset within a buffer byte (bitsPerPixelRow-1)
+	bmpRowAlignment   = 32 // BMP rows padded to a multiple of 4 bytes
+	bmpFileHeaderSize = 54 // BMP file header (14) + info header (40)
+	bmpInfoHeaderSize = 40 // BMP info header size
+	bmpPixelsPerMeter = 2835
+	// maxBitmapDimension caps width/height so the int16/uint8 bounds checks
+	// in SetPixel and GetPixel stay correct (no silent truncation wrap-around).
+	maxBitmapDimension = 32767
 )
 
 // display implements the t8go.Display interface for bitmap file output.
@@ -25,9 +39,11 @@ var _ t8go.IDisplay = &display{}
 // New creates a new bitmap display instance with the specified configuration.
 // The display will render graphics to a bitmap file with the given dimensions.
 // If no filename is specified, it defaults to "display.bmp".
-// Returns an error if the dimensions are invalid (zero width or height).
+// Returns the display, or a non-nil `err` if the dimensions are invalid
+// (zero width or height, or larger than `maxBitmapDimension`).
 func New(config Config) (t8go.IDisplay, error) {
-	if config.Width == 0 || config.Height == 0 {
+	if config.Width == 0 || config.Height == 0 ||
+		int(config.Width) > maxBitmapDimension || int(config.Height) > maxBitmapDimension {
 		return nil, ErrInvalidDimensions
 	}
 
@@ -35,8 +51,8 @@ func New(config Config) (t8go.IDisplay, error) {
 		config.Filename = "display.bmp"
 	}
 
-	bufSize := int(config.Width) * int(config.Height) / 8
-	if int(config.Height)%8 != 0 {
+	bufSize := int(config.Width) * int(config.Height) / bitsPerPixelRow
+	if int(config.Height)%bitsPerPixelRow != 0 {
 		bufSize += int(config.Width)
 	}
 
@@ -51,54 +67,56 @@ func New(config Config) (t8go.IDisplay, error) {
 	return d, nil
 }
 
-// Size returns the display dimensions
-func (d *display) Size() (width, height uint16) {
+// Size returns the display dimensions in pixels: `width` and `height`.
+func (d *display) Size() (uint16, uint16) {
 	return d.width, d.height
 }
 
-// BufferSize returns the size of the display buffer
+// BufferSize returns the size of the display buffer.
 func (d *display) BufferSize() int {
 	return d.bufSize
 }
 
-// Buffer returns the display buffer
+// Buffer returns the display buffer.
 func (d *display) Buffer() []byte {
 	return d.buffer
 }
 
-// ClearBuffer clears the display buffer
+// ClearBuffer clears the display buffer.
 func (d *display) ClearBuffer() {
 	for i := range d.buffer {
 		d.buffer[i] = 0
 	}
 }
 
-// ClearDisplay clears the buffer and saves an empty bitmap
+// ClearDisplay clears the buffer and saves an empty bitmap.
 func (d *display) ClearDisplay() {
 	d.ClearBuffer()
 	_ = d.Display()
 }
 
-// Command is a no-op for bitmap display (maintains interface compatibility)
-func (d *display) Command(cmd byte) error {
-	// No commands needed for bitmap output
+// Command is a no-op for bitmap display (maintains interface compatibility).
+func (d *display) Command(_ byte) error {
 	return nil
 }
 
-// Display saves the current buffer as a BMP file
+// Display saves the current buffer as a BMP file.
+// Returns an error if the file cannot be created or written.
 func (d *display) Display() error {
 	return d.saveBMP()
 }
 
-// SetPixel sets a pixel at the given coordinates
+// SetPixel sets a pixel at the given coordinates.
+// Out-of-bounds are safely ignored.
+// color=true -> set, color=false -> clear.
 func (d *display) SetPixel(x, y int16, color bool) {
-	if x < 0 || y < 0 || x >= int16(d.width) || y >= int16(d.height) {
+	if x < 0 || y < 0 || int(x) >= int(d.width) || int(y) >= int(d.height) {
 		return
 	}
 
 	// Use same buffer organization as SSD1306 for compatibility
-	byteIndex := int(x) + (int(y)/8)*int(d.width)
-	bitMask := uint8(1 << (y & 7))
+	byteIndex := int(x) + (int(y)/bitsPerPixelRow)*int(d.width)
+	bitMask := uint8(1 << (y & bitOffsetMask))
 
 	if byteIndex >= len(d.buffer) {
 		return
@@ -111,14 +129,15 @@ func (d *display) SetPixel(x, y int16, color bool) {
 	}
 }
 
-// GetPixel gets the state of a pixel at the given coordinates
+// GetPixel returns the pixel state at the given coordinates.
+// Returns false for out-of-bounds coordinates.
 func (d *display) GetPixel(x, y uint8) bool {
-	if x >= uint8(d.width) || y >= uint8(d.height) {
+	if int(x) >= int(d.width) || int(y) >= int(d.height) {
 		return false
 	}
 
-	byteIndex := int(x) + (int(y)/8)*int(d.width)
-	bitMask := uint8(1 << (y & 7))
+	byteIndex := int(x) + (int(y)/bitsPerPixelRow)*int(d.width)
+	bitMask := uint8(1 << (y & bitOffsetMask))
 
 	if byteIndex >= len(d.buffer) {
 		return false
@@ -127,7 +146,38 @@ func (d *display) GetPixel(x, y uint8) bool {
 	return d.buffer[byteIndex]&bitMask != 0
 }
 
-// saveBMP saves the display buffer as a BMP file
+// FillHRun fills a horizontal run of pixels at the given y coordinate.
+func (d *display) FillHRun(x0, x1, y int16, on bool) {
+	for x := x0; x <= x1; x++ {
+		d.SetPixel(x, y, on)
+	}
+}
+
+// FillRect fills a rectangular region of pixels.
+func (d *display) FillRect(x0, y0, x1, y1 int16, on bool) {
+	for y := y0; y <= y1; y++ {
+		for x := x0; x <= x1; x++ {
+			d.SetPixel(x, y, on)
+		}
+	}
+}
+
+// FillVRun fills a vertical run of pixels at the given x coordinate.
+func (d *display) FillVRun(x, y0, y1 int16, on bool) {
+	for y := y0; y <= y1; y++ {
+		d.SetPixel(x, y, on)
+	}
+}
+
+// DisplayRegion is a no-op for bitmap output: the whole file is
+// rewritten on each flush, so the region argument is irrelevant.
+// Returns an error if the file cannot be created or written.
+func (d *display) DisplayRegion(_, _, _, _ int) error {
+	return d.Display()
+}
+
+// saveBMP saves the display buffer as a BMP file.
+// Returns an error if the file cannot be created, written, or synced.
 func (d *display) saveBMP() error {
 	file, err := os.Create(d.filename)
 	if err != nil {
@@ -135,95 +185,87 @@ func (d *display) saveBMP() error {
 	}
 	defer file.Close()
 
-	// BMP file structure
 	width := int32(d.width)
 	height := int32(d.height)
 
-	// Calculate padding for BMP format (rows must be multiple of 4 bytes)
-	rowSize := (width + 31) / 32 * 4
+	// Rows must be padded to a multiple of 4 bytes.
+	rowSize := (width + bmpRowAlignment - 1) / bmpRowAlignment * (bmpRowAlignment / bitsPerPixelRow)
 	imageSize := rowSize * height
-	fileSize := 54 + imageSize // 54 bytes for headers + image data
+	fileSize := bmpFileHeaderSize + imageSize
 
-	// BMP File Header (14 bytes)
-	bmpHeader := []byte{
-		'B', 'M', // Signature
-		0, 0, 0, 0, // File size (to be filled)
-		0, 0, // Reserved
-		0, 0, // Reserved
-		54, 0, 0, 0, // Offset to pixel data
+	header := buildBMPHeader(width, height, fileSize, imageSize)
+	palette := buildBMPPalette()
+	pixelData := d.buildBMPPixelData(width, height, rowSize)
+
+	if err = writeOrErr(file, header); err != nil {
+		return err
 	}
-	binary.LittleEndian.PutUint32(bmpHeader[2:6], uint32(fileSize))
+	if err = writeOrErr(file, palette); err != nil {
+		return err
+	}
+	return writeOrErr(file, pixelData)
+}
 
-	// BMP Info Header (40 bytes)
-	infoHeader := make([]byte, 40)
-	binary.LittleEndian.PutUint32(infoHeader[0:4], 40)                  // Header size
-	binary.LittleEndian.PutUint32(infoHeader[4:8], uint32(width))       // Width
-	binary.LittleEndian.PutUint32(infoHeader[8:12], uint32(height))     // Height
-	binary.LittleEndian.PutUint16(infoHeader[12:14], 1)                 // Planes
-	binary.LittleEndian.PutUint16(infoHeader[14:16], 1)                 // Bits per pixel (monochrome)
-	binary.LittleEndian.PutUint32(infoHeader[16:20], 0)                 // Compression
-	binary.LittleEndian.PutUint32(infoHeader[20:24], uint32(imageSize)) // Image size
-	binary.LittleEndian.PutUint32(infoHeader[24:28], 2835)              // X pixels per meter
-	binary.LittleEndian.PutUint32(infoHeader[28:32], 2835)              // Y pixels per meter
-	binary.LittleEndian.PutUint32(infoHeader[32:36], 2)                 // Colors used (black and white)
-	binary.LittleEndian.PutUint32(infoHeader[36:40], 0)                 // Important colors
-
-	// Write headers
-	if _, err := file.Write(bmpHeader); err != nil {
+// writeOrErr writes data and collapses the error into ErrFileWrite so the
+// caller doesn't repeat the same handling at every site.
+func writeOrErr(w io.Writer, data []byte) error {
+	if _, err := w.Write(data); err != nil {
 		return ErrFileWrite
 	}
-	if _, err := file.Write(infoHeader); err != nil {
-		return ErrFileWrite
-	}
+	return nil
+}
 
-	// Color palette for monochrome BMP (8 bytes)
-	colorPalette := []byte{
+// buildBMPHeader returns the 14-byte file header + 40-byte info header in a
+// single buffer.
+func buildBMPHeader(width, height int32, fileSize, imageSize int32) []byte {
+	buf := make([]byte, bmpFileHeaderSize)
+	buf[0], buf[1] = 'B', 'M'
+	binary.LittleEndian.PutUint32(buf[2:6], uint32(fileSize))
+	binary.LittleEndian.PutUint32(buf[10:14], bmpFileHeaderSize)
+
+	// Info header lives at buf[14:54].
+	info := buf[14:]
+	binary.LittleEndian.PutUint32(info[0:4], bmpInfoHeaderSize)
+	binary.LittleEndian.PutUint32(info[4:8], uint32(width))
+	binary.LittleEndian.PutUint32(info[8:12], uint32(height))
+	binary.LittleEndian.PutUint16(info[12:14], 1)                 // planes
+	binary.LittleEndian.PutUint16(info[14:16], 1)                 // bits per pixel
+	binary.LittleEndian.PutUint32(info[20:24], uint32(imageSize)) // image size
+	binary.LittleEndian.PutUint32(info[24:28], bmpPixelsPerMeter) // X ppm
+	binary.LittleEndian.PutUint32(info[28:32], bmpPixelsPerMeter) // Y ppm
+	binary.LittleEndian.PutUint32(info[32:36], 2)                 // colors used
+	return buf
+}
+
+// buildBMPPalette returns the 8-byte BGRA palette for a monochrome BMP.
+func buildBMPPalette() []byte {
+	return []byte{
 		0x00, 0x00, 0x00, 0x00, // Black (BGRA)
 		0xFF, 0xFF, 0xFF, 0x00, // White (BGRA)
 	}
-	if _, err := file.Write(colorPalette); err != nil {
-		return ErrFileWrite
-	}
+}
 
-	// Convert buffer to BMP pixel data
-	// BMP rows are stored bottom-to-top, so we need to flip the image
-	pixelData := make([]byte, imageSize)
+// buildBMPPixelData renders the backbuffer into BMP rows (stored bottom-to-top).
+func (d *display) buildBMPPixelData(width, height int32, rowSize int32) []byte {
+	pixelData := make([]byte, rowSize*height)
 
-	for y := int16(0); y < int16(height); y++ {
-		bmpRow := int(height) - 1 - int(y) // Flip vertically for BMP format
+	for y := range int(height) {
+		bmpRow := int(height) - 1 - y
 		rowStart := int64(bmpRow) * int64(rowSize)
 
-		for x := int16(0); x < int16(width); x += 8 {
-			// Get the source byte from our buffer
-			srcByteIndex := int(x/8) + (int(y)/8)*int(d.width)
-			var srcByte uint8
-			if srcByteIndex < len(d.buffer) {
-				// Extract the relevant bits for this row from the source byte
-				bitOffset := y & 7
-				srcByte = (d.buffer[srcByteIndex] >> bitOffset) & 1
-				if srcByte != 0 {
-					srcByte = 0xFF
+		for x := int16(0); int(x) < int(width); x += bitsPerPixelRow {
+			dstByteIndex := rowStart + int64(x/bitsPerPixelRow)
+			if dstByteIndex >= int64(len(pixelData)) {
+				break
+			}
+			var dstByte uint8
+			for bit := 0; bit < bitsPerPixelRow && int(x)+bit < int(width); bit++ {
+				if d.GetPixel(uint8(x)+uint8(bit), uint8(y)) {
+					dstByte |= 1 << (bitOffsetMask - bit) // MSB first for BMP
 				}
 			}
-
-			// Convert 8 pixels at a time
-			dstByteIndex := rowStart + int64(x/8)
-			if dstByteIndex < int64(len(pixelData)) {
-				var dstByte uint8
-				for bit := 0; bit < 8 && x+int16(bit) < int16(width); bit++ {
-					if d.GetPixel(uint8(x+int16(bit)), uint8(y)) {
-						dstByte |= 1 << (7 - bit) // MSB first for BMP
-					}
-				}
-				pixelData[dstByteIndex] = dstByte
-			}
+			pixelData[dstByteIndex] = dstByte
 		}
 	}
-
-	// Write pixel data
-	if _, err := file.Write(pixelData); err != nil {
-		return ErrFileWrite
-	}
-
-	return nil
+	return pixelData
 }
