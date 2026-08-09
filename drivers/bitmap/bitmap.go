@@ -61,8 +61,8 @@ func New(config Config) (t8go.IDisplay, error) {
 	return d, nil
 }
 
-// Size returns the display dimensions.
-func (d *display) Size() (width, height uint16) {
+// Size returns the display dimensions in pixels: `width` and `height`.
+func (d *display) Size() (uint16, uint16) {
 	return d.width, d.height
 }
 

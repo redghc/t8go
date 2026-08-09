@@ -29,8 +29,8 @@ func (t *T8Go) GetDisplay() IDisplay {
 	return t.display
 }
 
-// Size returns the display dimensions as width and height in pixels.
-func (t *T8Go) Size() (width, height uint16) {
+// Size returns the display dimensions in pixels: `width` and `height`.
+func (t *T8Go) Size() (uint16, uint16) {
 	return t.display.Size()
 }
 

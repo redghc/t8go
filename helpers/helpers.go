@@ -73,9 +73,10 @@ func Direction[T ~int | ~int16 | ~int32 | ~int64](length T) int16 {
 	}
 }
 
-// NormalizeRect returns the top-left origin and the positive width/height
-// for a rectangle defined by two corners (x0,y0)-(x1,y1), inclusive.
-func NormalizeRect(x0, y0, x1, y1 int16) (originX, originY, width, height int16) {
+// NormalizeRect normalizes a rectangle defined by two corners (x0,y0)-(x1,y1),
+// inclusive, returning the top-left `originX`/`originY` and the positive
+// `width`/`height`.
+func NormalizeRect(x0, y0, x1, y1 int16) (int16, int16, int16, int16) {
 	if x1 < x0 {
 		x0, x1 = x1, x0
 	}
@@ -133,10 +134,11 @@ func ArcAngleDistance(a, b uint8) uint8 {
 	return d
 }
 
-// AngleEndpoint returns the endpoint (endX, endY) of a line that starts at (originX, originY),
-// has the given length (pixels, origin included), and angle in 0..255 units (64=90°, 128=180°, 192=270°).
+// AngleEndpoint returns the `endX`/`endY` endpoint of a line that starts at
+// (originX, originY), has the given length (pixels, origin included), and angle
+// in 0..255 units (64=90°, 128=180°, 192=270°).
 // Negative length flips the direction by +180° and uses its absolute value.
-func AngleEndpoint(originX, originY, length int16, angle uint8) (endX, endY int16) {
+func AngleEndpoint(originX, originY, length int16, angle uint8) (int16, int16) {
 	if length == 0 {
 		return originX, originY
 	}
@@ -144,7 +146,7 @@ func AngleEndpoint(originX, originY, length int16, angle uint8) (endX, endY int1
 	// Normalize negative length by flipping the direction.
 	if length < 0 {
 		length = -length
-		angle += 128
+		angle += AngleHalfTurn
 	}
 
 	// Steps along the major axis (origin counts as the first pixel).
