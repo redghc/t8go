@@ -199,14 +199,14 @@ func (accum *arcAccum) arcProcessPerimeter(
 		x   int16
 		y   int16
 	}{
-		{baseOctantAngle, centerX + offsetY, centerY - offsetX},                      // a0
-		{64 - baseOctantAngle, centerX + offsetX, centerY - offsetY},                 // a1
-		{64 + baseOctantAngle, centerX - offsetX, centerY - offsetY},                 // a2
-		{128 - baseOctantAngle, centerX - offsetY, centerY - offsetX},                // a3
-		{128 + baseOctantAngle, centerX - offsetY, centerY + offsetX},                // a4
-		{192 - baseOctantAngle, centerX - offsetX, centerY + offsetY},                // a5
-		{192 + baseOctantAngle, centerX + offsetX, centerY + offsetY},                // a6
-		{uint8(256 - uint16(baseOctantAngle)), centerX + offsetY, centerY + offsetX}, // a7
+		{baseOctantAngle, centerX + offsetY, centerY - offsetX},                                          // a0
+		{helpers.AngleQuarterTurn - baseOctantAngle, centerX + offsetX, centerY - offsetY},               // a1
+		{helpers.AngleQuarterTurn + baseOctantAngle, centerX - offsetX, centerY - offsetY},               // a2
+		{helpers.AngleHalfTurn - baseOctantAngle, centerX - offsetY, centerY - offsetX},                  // a3
+		{helpers.AngleHalfTurn + baseOctantAngle, centerX - offsetY, centerY + offsetX},                  // a4
+		{helpers.AngleThreeQuarterTurn - baseOctantAngle, centerX - offsetX, centerY + offsetY},          // a5
+		{helpers.AngleThreeQuarterTurn + baseOctantAngle, centerX + offsetX, centerY + offsetY},          // a6
+		{uint8(helpers.AngleFullCircle - uint16(baseOctantAngle)), centerX + offsetY, centerY + offsetX}, // a7
 	}
 
 	for _, c := range candidates {

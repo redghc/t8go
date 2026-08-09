@@ -10,6 +10,16 @@ import (
 	"github.com/redghc/t8go"
 )
 
+// BMP file format constants.
+const (
+	bitsPerPixelRow   = 8  // monochrome pixels per buffer byte
+	bitOffsetMask     = 7  // masks the bit offset within a buffer byte (bitsPerPixelRow-1)
+	bmpRowAlignment   = 32 // BMP rows padded to a multiple of 4 bytes
+	bmpFileHeaderSize = 54 // BMP file header (14) + info header (40)
+	bmpInfoHeaderSize = 40 // BMP info header size
+	bmpPixelsPerMeter = 2835
+)
+
 // display implements the t8go.Display interface for bitmap file output.
 // It provides a virtual display that saves graphics as bitmap files.
 type display struct {
@@ -35,8 +45,8 @@ func New(config Config) (t8go.IDisplay, error) {
 		config.Filename = "display.bmp"
 	}
 
-	bufSize := int(config.Width) * int(config.Height) / 8
-	if int(config.Height)%8 != 0 {
+	bufSize := int(config.Width) * int(config.Height) / bitsPerPixelRow
+	if int(config.Height)%bitsPerPixelRow != 0 {
 		bufSize += int(config.Width)
 	}
 
@@ -97,8 +107,8 @@ func (d *display) SetPixel(x, y int16, color bool) {
 	}
 
 	// Use same buffer organization as SSD1306 for compatibility
-	byteIndex := int(x) + (int(y)/8)*int(d.width)
-	bitMask := uint8(1 << (y & 7))
+	byteIndex := int(x) + (int(y)/bitsPerPixelRow)*int(d.width)
+	bitMask := uint8(1 << (y & bitOffsetMask))
 
 	if byteIndex >= len(d.buffer) {
 		return
@@ -117,8 +127,8 @@ func (d *display) GetPixel(x, y uint8) bool {
 		return false
 	}
 
-	byteIndex := int(x) + (int(y)/8)*int(d.width)
-	bitMask := uint8(1 << (y & 7))
+	byteIndex := int(x) + (int(y)/bitsPerPixelRow)*int(d.width)
+	bitMask := uint8(1 << (y & bitOffsetMask))
 
 	if byteIndex >= len(d.buffer) {
 		return false
@@ -169,9 +179,9 @@ func (d *display) saveBMP() error {
 	height := int32(d.height)
 
 	// Calculate padding for BMP format (rows must be multiple of 4 bytes)
-	rowSize := (width + 31) / 32 * 4
+	rowSize := (width + bmpRowAlignment - 1) / bmpRowAlignment * (bmpRowAlignment / bitsPerPixelRow)
 	imageSize := rowSize * height
-	fileSize := 54 + imageSize // 54 bytes for headers + image data
+	fileSize := bmpFileHeaderSize + imageSize
 
 	// BMP File Header (14 bytes)
 	bmpHeader := []byte{
@@ -179,21 +189,21 @@ func (d *display) saveBMP() error {
 		0, 0, 0, 0, // File size (to be filled)
 		0, 0, // Reserved
 		0, 0, // Reserved
-		54, 0, 0, 0, // Offset to pixel data
+		bmpFileHeaderSize, 0, 0, 0, // Offset to pixel data
 	}
 	binary.LittleEndian.PutUint32(bmpHeader[2:6], uint32(fileSize))
 
 	// BMP Info Header (40 bytes)
-	infoHeader := make([]byte, 40)
-	binary.LittleEndian.PutUint32(infoHeader[0:4], 40)                  // Header size
+	infoHeader := make([]byte, bmpInfoHeaderSize)
+	binary.LittleEndian.PutUint32(infoHeader[0:4], bmpInfoHeaderSize)   // Header size
 	binary.LittleEndian.PutUint32(infoHeader[4:8], uint32(width))       // Width
 	binary.LittleEndian.PutUint32(infoHeader[8:12], uint32(height))     // Height
 	binary.LittleEndian.PutUint16(infoHeader[12:14], 1)                 // Planes
 	binary.LittleEndian.PutUint16(infoHeader[14:16], 1)                 // Bits per pixel (monochrome)
 	binary.LittleEndian.PutUint32(infoHeader[16:20], 0)                 // Compression
 	binary.LittleEndian.PutUint32(infoHeader[20:24], uint32(imageSize)) // Image size
-	binary.LittleEndian.PutUint32(infoHeader[24:28], 2835)              // X pixels per meter
-	binary.LittleEndian.PutUint32(infoHeader[28:32], 2835)              // Y pixels per meter
+	binary.LittleEndian.PutUint32(infoHeader[24:28], bmpPixelsPerMeter) // X pixels per meter
+	binary.LittleEndian.PutUint32(infoHeader[28:32], bmpPixelsPerMeter) // Y pixels per meter
 	binary.LittleEndian.PutUint32(infoHeader[32:36], 2)                 // Colors used (black and white)
 	binary.LittleEndian.PutUint32(infoHeader[36:40], 0)                 // Important colors
 
@@ -222,14 +232,14 @@ func (d *display) saveBMP() error {
 		bmpRow := int(height) - 1 - y // Flip vertically for BMP format
 		rowStart := int64(bmpRow) * int64(rowSize)
 
-		for x := int16(0); x < int16(width); x += 8 {
+		for x := int16(0); x < int16(width); x += bitsPerPixelRow {
 			// Convert 8 pixels at a time
-			dstByteIndex := rowStart + int64(x/8)
+			dstByteIndex := rowStart + int64(x/bitsPerPixelRow)
 			if dstByteIndex < int64(len(pixelData)) {
 				var dstByte uint8
-				for bit := 0; bit < 8 && x+int16(bit) < int16(width); bit++ {
+				for bit := 0; bit < bitsPerPixelRow && x+int16(bit) < int16(width); bit++ {
 					if d.GetPixel(uint8(x+int16(bit)), uint8(y)) {
-						dstByte |= 1 << (7 - bit) // MSB first for BMP
+						dstByte |= 1 << (bitOffsetMask - bit) // MSB first for BMP
 					}
 				}
 				pixelData[dstByteIndex] = dstByte

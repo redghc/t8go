@@ -4,6 +4,45 @@
 // and coordinate transformations optimized for embedded systems.
 package helpers
 
+// Angle units used by the trigonometric helpers and arc drawing.
+// Angles are expressed in 0..255 units where 64 = 90°, 128 = 180°, 192 = 270°.
+const (
+	// AngleQuarterTurn is a quarter turn (90°) in 0..255 angle units.
+	AngleQuarterTurn = 64
+	// AngleHalfTurn is a half turn (180°).
+	AngleHalfTurn = 128
+	// AngleThreeQuarterTurn is a three-quarter turn (270°).
+	AngleThreeQuarterTurn = 192
+	// AngleMax is the largest representable angle (≈360°, wraps to 0).
+	AngleMax = 255
+	// AngleFullCircle is the size of a full circle in angle units.
+	AngleFullCircle = 256
+	// OctantSize is the angular width of one octant (45°).
+	OctantSize = 32
+)
+
+// Fixed-point parameters for the ApproxAtanUnit64 rational polynomial fit.
+const (
+	atanRatioScale  = 255     // scale of the offsetX/offsetY ratio
+	atanOutputMax   = 63      // upper bound of the mapped output
+	atanNumerator   = 770195  // numerator coefficient of the rational fit
+	atanCrossTerm   = 941     // cross-term constant of the rational fit
+	atanDenominator = 6137491 // denominator of the rational fit
+)
+
+// Octant indices in AngleEndpoint's octant decomposition, numbered
+// counter-clockwise starting from the +X axis.
+const (
+	octant0 = iota // right/up-ish
+	octant1        // up/right-ish
+	octant2        // up/left-ish
+	octant3        // left/up-ish
+	octant4        // left/down-ish
+	octant5        // down/left-ish
+	octant6        // down/right-ish
+	octant7        // right/down-ish
+)
+
 // Abs returns the absolute value of a signed integer (keeps original type).
 func Abs[T ~int | ~int16 | ~int32 | ~int64](value T) T {
 	if value < 0 {
@@ -57,14 +96,14 @@ func ApproxAtanUnit64(offsetX, offsetY int16) uint8 {
 	}
 
 	// ratio in 0..255 (represents offsetX/offsetY scaled to 0..255)
-	ratio := uint32(offsetX) * 255 / uint32(offsetY)
+	ratio := uint32(offsetX) * atanRatioScale / uint32(offsetY)
 
 	// Polynomial/rational fit (integer-only), adapted to map ratio to ~0..63.
 	// Mirrors the original behavior while packaged as a helper.
-	angle := ratio * (770195 - (ratio-255)*(ratio+941)) / 6137491
+	angle := ratio * (atanNumerator - (ratio-atanRatioScale)*(ratio+atanCrossTerm)) / atanDenominator
 
-	if angle > 63 {
-		return 63
+	if angle > atanOutputMax {
+		return atanOutputMax
 	}
 	return uint8(angle)
 }
@@ -88,8 +127,8 @@ func ArcAngleDistance(a, b uint8) uint8 {
 	} else {
 		d = b - a
 	}
-	if d > 255-d {
-		return 255 - d
+	if d > AngleMax-d {
+		return AngleMax - d
 	}
 	return d
 }
@@ -115,15 +154,15 @@ func AngleEndpoint(originX, originY, length int16, angle uint8) (endX, endY int1
 	}
 
 	// Axis-aligned fast paths (exact endpoints, zero error).
-	if angle%64 == 0 {
+	if angle%AngleQuarterTurn == 0 {
 		switch angle {
 		case 0:
 			return originX + chebyshev, originY
-		case 64:
+		case AngleQuarterTurn:
 			return originX, originY - chebyshev
-		case 128:
+		case AngleHalfTurn:
 			return originX - chebyshev, originY
-		case 192:
+		case AngleThreeQuarterTurn:
 			return originX, originY + chebyshev
 		default:
 			// e.g., 255≈360° → treat as 0°
@@ -132,31 +171,31 @@ func AngleEndpoint(originX, originY, length int16, angle uint8) (endX, endY int1
 	}
 
 	// Octant decomposition (32 units per octant).
-	octant := int(angle / 32)  // 0..7
-	intra := int16(angle % 32) // 0..31
+	octant := int(angle / OctantSize)  // 0..7
+	intra := int16(angle % OctantSize) // 0..31
 
 	// Major axis per octant.
-	majorIsX := (octant == 0 || octant == 3 || octant == 4 || octant == 7)
+	majorIsX := (octant == octant0 || octant == octant3 || octant == octant4 || octant == octant7)
 
 	// Integer minor component with rounding.
 	var absDX, absDY int16
 	if majorIsX {
 		absDX = chebyshev
-		absDY = int16((int32(chebyshev)*int32(intra) + 16) / 32) // ≈ round(chebyshev*intra/32)
+		absDY = int16((int32(chebyshev)*int32(intra) + OctantSize/2) / OctantSize) // ≈ round(chebyshev*intra/32)
 	} else {
 		absDY = chebyshev
-		absDX = int16((int32(chebyshev)*int32(32-intra) + 16) / 32) // ≈ round(chebyshev*(32-intra)/32)
+		absDX = int16((int32(chebyshev)*int32(OctantSize-intra) + OctantSize/2) / OctantSize) // ≈ round(chebyshev*(32-intra)/32)
 	}
 
 	// Signs in screen coordinates (Y grows downward).
 	switch octant {
-	case 0, 1: // right/up-ish and up/right-ish
+	case octant0, octant1: // right/up-ish and up/right-ish
 		absDX, absDY = +absDX, -absDY
-	case 2, 3: // up/left-ish and left/up-ish
+	case octant2, octant3: // up/left-ish and left/up-ish
 		absDX, absDY = -absDX, -absDY
-	case 4, 5: // left/down-ish and down/left-ish
+	case octant4, octant5: // left/down-ish and down/left-ish
 		absDX, absDY = -absDX, +absDY
-	default: // 6, 7: down/right-ish and right/down-ish
+	default: // octant6, octant7: down/right-ish and right/down-ish
 		absDX, absDY = +absDX, +absDY
 	}
 

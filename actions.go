@@ -1086,14 +1086,14 @@ func (t *T8Go) drawArcSection(offsetX, offsetY, centerX, centerY int16, angleSta
 	baseOctantAngle := helpers.ApproxAtanUnit64(offsetX, offsetY) // uint8 in [0..64]
 
 	// Compose angles (0..255) for the 8-way symmetry. All done in uint8 space.
-	a0 := baseOctantAngle                      // (+y, -x) →   0.. 64
-	a1 := 64 - baseOctantAngle                 // (+x, -y) →   0.. 64
-	a2 := 64 + baseOctantAngle                 // (-x, -y) →  64..128
-	a3 := 128 - baseOctantAngle                // (-y, -x) →  64..128
-	a4 := 128 + baseOctantAngle                // (-y, +x) → 128..192
-	a5 := 192 - baseOctantAngle                // (-x, +y) → 128..192
-	a6 := 192 + baseOctantAngle                // (+x, +y) → 192..256
-	a7 := uint8(256 - uint16(baseOctantAngle)) // (+y, +x) → wrap to 0..255
+	a0 := baseOctantAngle                                          // (+y, -x) →   0.. 64
+	a1 := helpers.AngleQuarterTurn - baseOctantAngle               // (+x, -y) →   0.. 64
+	a2 := helpers.AngleQuarterTurn + baseOctantAngle               // (-x, -y) →  64..128
+	a3 := helpers.AngleHalfTurn - baseOctantAngle                  // (-y, -x) →  64..128
+	a4 := helpers.AngleHalfTurn + baseOctantAngle                  // (-y, +x) → 128..192
+	a5 := helpers.AngleThreeQuarterTurn - baseOctantAngle          // (-x, +y) → 128..192
+	a6 := helpers.AngleThreeQuarterTurn + baseOctantAngle          // (+x, +y) → 192..256
+	a7 := uint8(helpers.AngleFullCircle - uint16(baseOctantAngle)) // (+y, +x) → wrap to 0..255
 
 	// Only plot points whose angle falls inside [angleStart, angleEnd).
 	// If the caller asked for a full arc, this function is not invoked (fast-path above).
@@ -1140,7 +1140,7 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 
 	// Perimeter sampling (midpoint circle) → accumulate spans and arc endpoints.
 	clear(t.scratch)
-	accum := arcAccum{bestStartAngleDiff: 255, bestEndAngleDiff: 255}
+	accum := arcAccum{bestStartAngleDiff: helpers.AngleMax, bestEndAngleDiff: helpers.AngleMax}
 
 	errorAccumulator := 1 - radius
 	deltaX := int16(1)
