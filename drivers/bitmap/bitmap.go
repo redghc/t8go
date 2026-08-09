@@ -35,7 +35,8 @@ var _ t8go.IDisplay = &display{}
 // New creates a new bitmap display instance with the specified configuration.
 // The display will render graphics to a bitmap file with the given dimensions.
 // If no filename is specified, it defaults to "display.bmp".
-// Returns an error if the dimensions are invalid (zero width or height).
+// Returns the display, or a non-nil `err` if the dimensions are invalid
+// (zero width or height).
 func New(config Config) (t8go.IDisplay, error) {
 	if config.Width == 0 || config.Height == 0 {
 		return nil, ErrInvalidDimensions

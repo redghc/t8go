@@ -51,7 +51,7 @@ type IDisplay interface {
 // a unified API for both simple and complex drawing operations.
 type IDisplayDrawer interface {
 	GetDisplay() IDisplay
-	Size() (width, height uint16)
+	Size() (width, height uint16) // Size returns the display dimensions in pixels
 	BufferSize() int
 	Buffer() []byte
 	ClearBuffer()

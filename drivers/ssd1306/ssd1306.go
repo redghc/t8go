@@ -42,6 +42,8 @@ var _ t8go.IDisplay = &display{}
 // * ----- Constructors -----
 
 // NewI2C creates a new SSD1306 display instance using I2C communication.
+// Returns the display, or a non-nil `err` if the I2C bus is nil or the
+// initialization sequence fails.
 func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.IDisplay, error) {
 	if bus == nil {
 		return nil, ErrI2CBusNil

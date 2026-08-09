@@ -517,7 +517,8 @@ func (t *T8Go) drawPolyExposed(lo, hi int16, runs []int16, y int16) {
 	}
 }
 
-// polygonBoundsY returns the min and max Y coordinate of the given vertices.
+// polygonBoundsY returns the minimum and maximum Y coordinates of the given
+// vertices, as `yMin` and `yMax`.
 func polygonBoundsY(points []Point) (int16, int16) {
 	yMin, yMax := points[0].Y, points[0].Y
 	for _, p := range points[1:] {
@@ -536,9 +537,9 @@ const scanPixelScale = 2
 
 // polyCrossingStart returns the x coordinate of the first pixel whose center
 // lies to the right of the intersection of the edge p1-p2 with the center of
-// scanline y, and whether the edge crosses that scanline. Horizontal edges
-// never cross. The half-open interval [lo, hi) guarantees that a vertex shared
-// by two edges is counted exactly once.
+// scanline y, and `ok`, whether the edge crosses that scanline. Horizontal
+// edges never cross. The half-open interval [lo, hi) guarantees that a vertex
+// shared by two edges is counted exactly once.
 func polyCrossingStart(p1, p2 Point, y int16) (int16, bool) {
 	x1, y1 := p1.X, p1.Y
 	x2, y2 := p2.X, p2.Y
@@ -567,7 +568,7 @@ func polyCrossingStart(p1, p2 Point, y int16) (int16, bool) {
 	pixel := int64(xLo) + floorDiv(scanPixelScale*num-den, scanPixelScale*den) + 1
 	// The result is bounded by the vertex coordinates (display-size), so the
 	// narrowing cast cannot overflow in practice.
-	return int16(pixel), true //nolint:gosec // G115: safe, value bounded by vertex range
+	return int16(pixel), true
 }
 
 // floorDiv divides a by b rounding toward negative infinity (b must be > 0).
