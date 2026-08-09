@@ -318,6 +318,56 @@ func (d *display) FillRect(x0, y0, x1, y1 int16, on bool) {
 	}
 }
 
+// FillVRun sets or clears a vertical run of pixels from y0 to y1 inclusive at column x.
+// Out-of-bounds coordinates are clipped, and runs outside the display are ignored.
+// Pages fully covered by the run are written with a single byte store.
+func (d *display) FillVRun(x, y0, y1 int16, on bool) {
+	if x < 0 || x >= int16(d.width) {
+		return
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+	if y1 >= int16(d.height) {
+		y1 = int16(d.height) - 1
+	}
+	if y1 < y0 {
+		return
+	}
+
+	col := int(x)
+	startPage := int(y0 >> 3)
+	endPage := int(y1 >> 3)
+
+	for page := startPage; page <= endPage; page++ {
+		var lo, hi uint8
+		if page == startPage {
+			lo = uint8(y0 & 7)
+		}
+		if page == endPage {
+			hi = uint8(y1 & 7)
+		} else {
+			hi = 7
+		}
+
+		var mask uint8
+		for b := lo; b <= hi; b++ {
+			mask |= 1 << b
+		}
+
+		bi := page*d.stride + col
+		if on {
+			if mask == 0xFF {
+				d.buffer[bi] = 0xFF
+			} else {
+				d.buffer[bi] |= mask
+			}
+		} else {
+			d.buffer[bi] &^= mask
+		}
+	}
+}
+
 // SetPixel sets a pixel at the given coordinates
 // Out-of-bounds are safely ignored.
 // color=true -> set, color=false -> clear.

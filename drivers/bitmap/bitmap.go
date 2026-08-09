@@ -143,6 +143,13 @@ func (d *display) FillRect(x0, y0, x1, y1 int16, on bool) {
 	}
 }
 
+// FillVRun fills a vertical run of pixels at the given x coordinate.
+func (d *display) FillVRun(x, y0, y1 int16, on bool) {
+	for y := y0; y <= y1; y++ {
+		d.SetPixel(x, y, on)
+	}
+}
+
 // DisplayRegion is a no-op for bitmap output: the whole file is
 // rewritten on each flush, so the region argument is irrelevant.
 func (d *display) DisplayRegion(x0, y0, x1, y1 int) error {

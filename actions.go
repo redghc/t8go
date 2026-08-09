@@ -51,11 +51,15 @@ func (t *T8Go) DrawLine(startX, startY, endX, endY int16) {
 	errorAccumulator := deltaX / 2
 	currentYPos := startY
 
+	// The line's pixels stay within the bounding box of its endpoints.
+	t.markDirty(startX, startY)
+	t.markDirty(endX, endY)
+
 	for currentXPos := startX; currentXPos <= endX; currentXPos++ {
 		if isSteep {
-			t.SetPixel(currentYPos, currentXPos, true)
+			t.setPixel(currentYPos, currentXPos)
 		} else {
-			t.SetPixel(currentXPos, currentYPos, true)
+			t.setPixel(currentXPos, currentYPos)
 		}
 
 		errorAccumulator -= deltaY
@@ -96,9 +100,9 @@ func (t *T8Go) DrawVLine(originX, originY, length int16) {
 		return
 	}
 
-	for currentYPos := y0; currentYPos <= y1; currentYPos++ {
-		t.SetPixel(originX, currentYPos, true)
-	}
+	t.markDirty(originX, y0)
+	t.markDirty(originX, y1)
+	t.display.FillVRun(originX, y0, y1, true)
 }
 
 // DrawHLine draws a horizontal line starting at (originX, originY) with the specified length.
@@ -383,6 +387,9 @@ func (t *T8Go) DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants) {
 		return
 	}
 
+	t.markDirty(centerX-radius, centerY-radius)
+	t.markDirty(centerX+radius, centerY+radius)
+
 	// Midpoint circle algorithm with integer arithmetic.
 	errorAccumulator := int16(1 - radius)
 	deltaX := int16(1)
@@ -410,20 +417,20 @@ func (t *T8Go) DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants) {
 // filtered by the mask to draw only the selected quadrants.
 func (t *T8Go) drawCircleSection(offsetX, offsetY, centerX, centerY int16, mask DrawQuadrants) {
 	if mask.has(DrawTopRight) {
-		t.DrawPixel(centerX+offsetX, centerY-offsetY)
-		t.DrawPixel(centerX+offsetY, centerY-offsetX)
+		t.setPixel(centerX+offsetX, centerY-offsetY)
+		t.setPixel(centerX+offsetY, centerY-offsetX)
 	}
 	if mask.has(DrawTopLeft) {
-		t.DrawPixel(centerX-offsetX, centerY-offsetY)
-		t.DrawPixel(centerX-offsetY, centerY-offsetX)
+		t.setPixel(centerX-offsetX, centerY-offsetY)
+		t.setPixel(centerX-offsetY, centerY-offsetX)
 	}
 	if mask.has(DrawBottomRight) {
-		t.DrawPixel(centerX+offsetX, centerY+offsetY)
-		t.DrawPixel(centerX+offsetY, centerY+offsetX)
+		t.setPixel(centerX+offsetX, centerY+offsetY)
+		t.setPixel(centerX+offsetY, centerY+offsetX)
 	}
 	if mask.has(DrawBottomLeft) {
-		t.DrawPixel(centerX-offsetX, centerY+offsetY)
-		t.DrawPixel(centerX-offsetY, centerY+offsetX)
+		t.setPixel(centerX-offsetX, centerY+offsetY)
+		t.setPixel(centerX-offsetY, centerY+offsetX)
 	}
 }
 
@@ -432,6 +439,14 @@ func (t *T8Go) drawCircleSection(offsetX, offsetY, centerX, centerY int16, mask 
 // Use DrawNone or DrawAll to fill the complete circle disc.
 func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants) {
 	if radius <= 0 {
+		return
+	}
+
+	// Full disc fast path: compute each column's vertical extent once and
+	// paint it with a page-aligned FillVRun, instead of 8 overlapping
+	// vertical runs per perimeter step.
+	if (mask == DrawNone || mask == DrawAll) && radius < int16(len(t.colScratch)) {
+		t.fillCircle(centerX, centerY, radius)
 		return
 	}
 
@@ -455,6 +470,74 @@ func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants
 		errorAccumulator += deltaX
 
 		t.drawCircleFillSection(offsetX, offsetY, centerX, centerY, mask)
+	}
+}
+
+// fillCircle fills a complete disc. The midpoint perimeter is walked once to
+// record the vertical half-extent of each column, then every column is painted
+// exactly once.
+func (t *T8Go) fillCircle(centerX, centerY, radius int16) {
+	clear(t.colScratch)
+
+	errorAccumulator := 1 - radius
+	deltaX := int16(1)
+	deltaY := -2 * radius
+	offsetX := int16(0)
+	offsetY := radius
+
+	t.recordCircleExtent(offsetX, offsetY)
+	for offsetX < offsetY {
+		if errorAccumulator >= 0 {
+			offsetY--
+			deltaY += 2
+			errorAccumulator += deltaY
+		}
+		offsetX++
+		deltaX += 2
+		errorAccumulator += deltaX
+
+		t.recordCircleExtent(offsetX, offsetY)
+	}
+
+	t.paintColumnExtents(centerX, centerY, radius)
+}
+
+// recordCircleExtent stores the disc's vertical half-extent for the columns at
+// offsets offsetX and offsetY.
+func (t *T8Go) recordCircleExtent(offsetX, offsetY int16) {
+	t.setColExtent(offsetX, offsetY)
+	t.setColExtent(offsetY, offsetX)
+}
+
+// setColExtent records (or grows) the vertical half-extent for column offset.
+func (t *T8Go) setColExtent(offset, extent int16) {
+	if offset < 0 || int(offset) >= len(t.colScratch) {
+		return
+	}
+	row := t.colScratch[offset]
+	row.AddPoint(extent)
+	t.colScratch[offset] = row
+}
+
+// paintColumnExtents fills one vertical run per recorded column offset.
+func (t *T8Go) paintColumnExtents(centerX, centerY, radius int16) {
+	t.markDirty(centerX-radius, centerY-radius)
+	t.markDirty(centerX+radius, centerY+radius)
+
+	for offsetX := int16(0); offsetX <= radius; offsetX++ {
+		row := t.colScratch[offsetX]
+		if row.IsEmpty() {
+			continue
+		}
+		half := row.maxX
+		y0 := centerY - half
+		height := 2*half + 1
+		if offsetX == 0 {
+			t.DrawVLine(centerX, y0, height)
+		} else {
+			t.DrawVLine(centerX+offsetX, y0, height)
+			t.DrawVLine(centerX-offsetX, y0, height)
+		}
 	}
 }
 
@@ -488,6 +571,9 @@ func (t *T8Go) DrawEllipse(centerX, centerY, radiusX, radiusY int16, mask DrawQu
 	if radiusX <= 0 || radiusY <= 0 {
 		return
 	}
+
+	t.markDirty(centerX-radiusX, centerY-radiusY)
+	t.markDirty(centerX+radiusX, centerY+radiusY)
 
 	// Use int32 internally to avoid overflow on products.
 	rx := int32(radiusX)
@@ -555,16 +641,16 @@ func (t *T8Go) drawEllipseSection(offsetX, offsetY, centerX, centerY int16, mask
 		return
 	}
 	if mask.has(DrawTopRight) {
-		t.DrawPixel(centerX+offsetX, centerY-offsetY)
+		t.setPixel(centerX+offsetX, centerY-offsetY)
 	}
 	if mask.has(DrawTopLeft) {
-		t.DrawPixel(centerX-offsetX, centerY-offsetY)
+		t.setPixel(centerX-offsetX, centerY-offsetY)
 	}
 	if mask.has(DrawBottomRight) {
-		t.DrawPixel(centerX+offsetX, centerY+offsetY)
+		t.setPixel(centerX+offsetX, centerY+offsetY)
 	}
 	if mask.has(DrawBottomLeft) {
-		t.DrawPixel(centerX-offsetX, centerY+offsetY)
+		t.setPixel(centerX-offsetX, centerY+offsetY)
 	}
 }
 
@@ -575,6 +661,13 @@ func (t *T8Go) drawEllipseSection(offsetX, offsetY, centerX, centerY int16, mask
 // No operation is performed if either radius is less than or equal to zero.
 func (t *T8Go) DrawEllipseFill(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants) {
 	if radiusX <= 0 || radiusY <= 0 {
+		return
+	}
+
+	// Full ellipse fast path: compute each column's vertical extent once and
+	// paint it with a page-aligned FillVRun.
+	if (mask == DrawNone || mask == DrawAll) && radiusX < int16(len(t.colScratch)) {
+		t.fillEllipse(centerX, centerY, radiusX, radiusY)
 		return
 	}
 
@@ -663,6 +756,79 @@ func (t *T8Go) drawEllipseFillSection(offsetX, offsetY, centerX, centerY int16, 
 	if mask.has(DrawBottomLeft) {
 		t.DrawVLine(centerX-offsetX, centerY, offsetY+1)
 	}
+}
+
+// fillEllipse fills a complete ellipse. The midpoint perimeter (both regions)
+// is walked once to record the vertical half-extent of each column, then every
+// column is painted exactly once.
+func (t *T8Go) fillEllipse(centerX, centerY, radiusX, radiusY int16) {
+	clear(t.colScratch)
+
+	rx := int32(radiusX)
+	ry := int32(radiusY)
+	rx2 := rx * rx
+	ry2 := ry * ry
+	rx2x2 := rx2 * 2
+	ry2x2 := ry2 * 2
+
+	// Region 1 (horizontal-dominant).
+	offsetX := int32(radiusX)
+	offsetY := int32(0)
+	deltaXChange := (1 - 2*int32(radiusX)) * ry2
+	deltaYChange := rx2
+	errorAccumulator := int32(0)
+	stopX := ry2x2 * int32(radiusX)
+	stopY := int32(0)
+
+	for stopX >= stopY {
+		t.recordEllipseExtent(int16(offsetX), int16(offsetY))
+
+		offsetY++
+		stopY += rx2x2
+		errorAccumulator += deltaYChange
+		deltaYChange += rx2x2
+
+		if 2*errorAccumulator+deltaXChange > 0 {
+			offsetX--
+			stopX -= ry2x2
+			errorAccumulator += deltaXChange
+			deltaXChange += ry2x2
+		}
+	}
+
+	// Region 2 (vertical-dominant).
+	offsetX = 0
+	offsetY = int32(radiusY)
+	deltaXChange = ry2
+	deltaYChange = (1 - 2*int32(radiusY)) * rx2
+	errorAccumulator = 0
+	stopX = 0
+	stopY = rx2x2 * int32(radiusY)
+
+	for stopX <= stopY {
+		t.recordEllipseExtent(int16(offsetX), int16(offsetY))
+
+		offsetX++
+		stopX += ry2x2
+		errorAccumulator += deltaXChange
+		deltaXChange += ry2x2
+
+		if 2*errorAccumulator+deltaYChange > 0 {
+			offsetY--
+			stopY -= rx2x2
+			errorAccumulator += deltaYChange
+			deltaYChange += rx2x2
+		}
+	}
+
+	t.paintColumnExtents(centerX, centerY, radiusX)
+}
+
+// recordEllipseExtent stores the ellipse's vertical half-extent for the column
+// at offset offsetX. Unlike the circle, the fill only covers the cx±offsetX
+// column family, so no symmetric offsetY record is needed.
+func (t *T8Go) recordEllipseExtent(offsetX, offsetY int16) {
+	t.setColExtent(offsetX, offsetY)
 }
 
 // DrawArc draws an outlined arc (partial circle) centered at (centerX, centerY) with the specified radius.

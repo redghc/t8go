@@ -11,11 +11,16 @@ package t8go
 func New(display IDisplay) IDisplayDrawer {
 	w, h := display.Size()
 
+	// colScratch holds the vertical extent of each column for filled
+	// circle/ellipse rendering; index by the horizontal offset from center.
+	maxDim := max(w, h)
+
 	return &T8Go{
-		display: display,
-		width:   int16(w),
-		height:  int16(h),
-		scratch: make([]scanSpan, int(h)),
+		display:    display,
+		width:      int16(w),
+		height:     int16(h),
+		scratch:    make([]scanSpan, int(h)),
+		colScratch: make([]scanSpan, int(maxDim)/2+1),
 	}
 }
 
@@ -97,14 +102,33 @@ func (t *T8Go) SetPixel(x, y int16, on bool) {
 	t.display.SetPixel(x, y, on)
 }
 
+// setPixel writes an on-pixel without dirty tracking or bounds handling.
+// Drawing primitives use it for their per-pixel loops and mark the shape's
+// bounding box once, avoiding per-pixel overhead.
+func (t *T8Go) setPixel(x, y int16) {
+	t.display.SetPixel(x, y, true)
+}
+
 // GetPixel returns the state of a pixel at the specified coordinates (x, y).
 // Returns true if the pixel is on, false if it's off.
 func (t *T8Go) GetPixel(x, y uint8) bool {
 	return t.display.GetPixel(x, y)
 }
 
-// markDirty expands the dirty region to include the pixel (x, y).
+// markDirty expands the dirty region to include the pixel (x, y), clamped to
+// the visible area.
 func (t *T8Go) markDirty(x, y int16) {
+	if x < 0 {
+		x = 0
+	} else if x >= t.width {
+		x = t.width - 1
+	}
+	if y < 0 {
+		y = 0
+	} else if y >= t.height {
+		y = t.height - 1
+	}
+
 	if !t.dirty.valid {
 		t.dirty.valid = true
 		t.dirty.x0, t.dirty.y0, t.dirty.x1, t.dirty.y1 = x, y, x, y

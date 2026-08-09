@@ -19,6 +19,7 @@ type IDisplay interface {
 
 	FillHRun(x0, x1, y int16, on bool)      // FillHRun sets or clears a horizontal run of pixels from x0 to x1 inclusive at row y
 	FillRect(x0, y0, x1, y1 int16, on bool) // FillRect sets or clears a rectangular region with inclusive bounds
+	FillVRun(x, y0, y1 int16, on bool)      // FillVRun sets or clears a vertical run of pixels from y0 to y1 inclusive at column x
 }
 
 // ----------
@@ -92,11 +93,12 @@ type IDisplayDrawer interface {
 // It wraps a Display interface and provides methods for drawing various shapes
 // such as lines, rectangles, circles, and other geometric primitives.
 type T8Go struct {
-	display IDisplay   // The underlying display interface
-	width   int16      // Display width in pixels (cached)
-	height  int16      // Display height in pixels (cached)
-	scratch []scanSpan // Reusable scanline accumulator (sized to display height)
-	dirty   dirtyRect  // Dirty region tracked for partial display updates
+	display    IDisplay   // The underlying display interface
+	width      int16      // Display width in pixels (cached)
+	height     int16      // Display height in pixels (cached)
+	scratch    []scanSpan // Reusable scanline accumulator (sized to display height)
+	colScratch []scanSpan // Reusable per-column extent accumulator for filled circles/ellipses
+	dirty      dirtyRect  // Dirty region tracked for partial display updates
 }
 
 var _ IDisplayDrawer = (*T8Go)(nil) // Ensure T8Go implements DisplayDrawer
