@@ -76,8 +76,28 @@ func (t *T8Go) DrawVLine(originX, originY, length int16) {
 	}
 
 	uLength := helpers.Abs(length)
-	for deltaY := range uLength {
-		t.SetPixel(originX, originY+deltaY*direction, true)
+	y0 := originY
+	y1 := originY + (uLength-1)*direction
+	if y0 > y1 {
+		y0, y1 = y1, y0
+	}
+
+	// Clip to the visible area before writing.
+	if originX < 0 || originX >= t.width {
+		return
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+	if y1 >= t.height {
+		y1 = t.height - 1
+	}
+	if y1 < y0 {
+		return
+	}
+
+	for currentYPos := y0; currentYPos <= y1; currentYPos++ {
+		t.SetPixel(originX, currentYPos, true)
 	}
 }
 
@@ -91,9 +111,29 @@ func (t *T8Go) DrawHLine(originX, originY, length int16) {
 	}
 
 	uLength := helpers.Abs(length)
-	for deltaX := range uLength {
-		t.SetPixel(originX+deltaX*direction, originY, true)
+	x0 := originX
+	x1 := originX + (uLength-1)*direction
+	if x0 > x1 {
+		x0, x1 = x1, x0
 	}
+
+	// Clip to the visible area before writing.
+	if originY < 0 || originY >= t.height {
+		return
+	}
+	if x0 < 0 {
+		x0 = 0
+	}
+	if x1 >= t.width {
+		x1 = t.width - 1
+	}
+	if x1 < x0 {
+		return
+	}
+
+	t.markDirty(x0, originY)
+	t.markDirty(x1, originY)
+	t.display.FillHRun(x0, x1, originY, true)
 }
 
 // DrawLineAngle draws a line from (originX, originY) with the specified length and angle.
@@ -202,15 +242,46 @@ func (t *T8Go) DrawBoxFill(originX, originY, width, height int16) {
 		return
 	}
 
+	uWidth := helpers.Abs(width)
 	uHeight := helpers.Abs(height)
 
-	for offsetY := range uHeight {
-		t.DrawHLine(
-			originX,
-			originY+offsetY*directionY,
-			width,
-		)
+	x0 := originX
+	x1 := originX + (uWidth-1)*directionX
+	y0 := originY
+	y1 := originY + (uHeight-1)*directionY
+
+	t.fillRect(x0, y0, x1, y1)
+}
+
+// fillRect sets the inclusive rectangle (x0,y0)-(x1,y1), clipped to the
+// visible area, and marks it dirty. Coordinates are normalized internally.
+func (t *T8Go) fillRect(x0, y0, x1, y1 int16) {
+	if x0 > x1 {
+		x0, x1 = x1, x0
 	}
+	if y0 > y1 {
+		y0, y1 = y1, y0
+	}
+
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+	if x1 >= t.width {
+		x1 = t.width - 1
+	}
+	if y1 >= t.height {
+		y1 = t.height - 1
+	}
+	if x1 < x0 || y1 < y0 {
+		return
+	}
+
+	t.markDirty(x0, y0)
+	t.markDirty(x1, y1)
+	t.display.FillRect(x0, y0, x1, y1, true)
 }
 
 // DrawBoxFillCoords draws a filled rectangle between two corners:
@@ -284,8 +355,6 @@ func (t *T8Go) DrawTriangle(x1, y1, x2, y2, x3, y3 int16) {
 // The triangle is filled using scanline rendering to ensure complete coverage
 // with inclusive edges and no gaps.
 func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16) {
-	t.DrawTriangle(x1, y1, x2, y2, x3, y3)
-
 	// Degenerate horizontal line (all y equal)
 	if y1 == y2 && y2 == y3 {
 		left := min(x1, min(x2, x3))
@@ -294,26 +363,15 @@ func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16) {
 		return
 	}
 
-	minY := min(y1, min(y2, y3))
-	maxY := max(y1, max(y2, y3))
+	// Accumulate edge pixels into scanline spans (reused scratch buffer).
+	// The edge spans already cover the outline pixels, so no separate
+	// outline pass is needed.
+	clear(t.scratch)
+	scanAddLineToSpans(t.scratch, x1, y1, x2, y2)
+	scanAddLineToSpans(t.scratch, x2, y2, x3, y3)
+	scanAddLineToSpans(t.scratch, x3, y3, x1, y1)
 
-	// Accumulate edge pixels into spans keyed by Y (map value's zero state has initialized=false).
-	spans := make(map[int16]scanSpan, int(maxY-minY)+1)
-	scanAddLineToSpans(spans, x1, y1, x2, y2)
-	scanAddLineToSpans(spans, x2, y2, x3, y3)
-	scanAddLineToSpans(spans, x3, y3, x1, y1)
-
-	for y := minY; y <= maxY; y++ {
-		row := spans[y]
-		if !row.initialized {
-			continue
-		}
-		startXPos, endXPos := row.minX, row.maxX
-		if startXPos > endXPos {
-			startXPos, endXPos = endXPos, startXPos
-		}
-		t.DrawHLine(startXPos, y, endXPos-startXPos+1)
-	}
+	t.paintSpans(t.scratch)
 }
 
 // DrawCircle draws an outlined circle centered at (centerX, centerY) with the specified radius.
@@ -714,7 +772,7 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 	}
 
 	// Perimeter sampling (midpoint circle) → accumulate spans and arc endpoints.
-	spans := make(map[int16]scanSpan, int(radius)*2+3)
+	clear(t.scratch)
 	accum := arcAccum{bestStartAngleDiff: 255, bestEndAngleDiff: 255}
 
 	errorAccumulator := int16(1 - radius)
@@ -723,7 +781,7 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 	offsetX := int16(0)
 	offsetY := radius
 
-	accum.arcProcessPerimeter(spans, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
+	accum.arcProcessPerimeter(t.scratch, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
 
 	for offsetX < offsetY {
 		if errorAccumulator >= 0 {
@@ -735,16 +793,32 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 		deltaX += 2
 		errorAccumulator += deltaX
 
-		accum.arcProcessPerimeter(spans, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
+		accum.arcProcessPerimeter(t.scratch, centerX, centerY, offsetX, offsetY, angleStart, angleEnd)
 	}
 
 	// Add radial boundaries (center → endpoints) into spans.
-	updateSpan(spans, centerX, centerY)
-	scanAddLineToSpans(spans, centerX, centerY, accum.startEndX, accum.startEndY)
-	scanAddLineToSpans(spans, centerX, centerY, accum.endEndX, accum.endEndY)
+	addSpan(t.scratch, centerX, centerY)
+	scanAddLineToSpans(t.scratch, centerX, centerY, accum.startEndX, accum.startEndY)
+	scanAddLineToSpans(t.scratch, centerX, centerY, accum.endEndX, accum.endEndY)
 
-	// Paint consolidated spans.
-	for yPos, row := range spans {
+	t.paintSpans(t.scratch)
+}
+
+// addSpan widens the span at row yPos to include xPos.
+// Out-of-bounds rows are ignored.
+func addSpan(spans []scanSpan, xPos, yPos int16) {
+	if yPos < 0 || int(yPos) >= len(spans) {
+		return
+	}
+	row := spans[yPos]
+	row.AddPoint(xPos)
+	spans[yPos] = row
+}
+
+// paintSpans fills every scanline span with a horizontal run, skipping empty rows.
+func (t *T8Go) paintSpans(spans []scanSpan) {
+	for yPos := range spans {
+		row := spans[yPos]
 		if row.IsEmpty() {
 			continue
 		}
@@ -752,20 +826,12 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 		if startXPos > endXPos {
 			startXPos, endXPos = endXPos, startXPos
 		}
-		length := endXPos - startXPos + 1
-		t.DrawHLine(startXPos, yPos, length)
+		t.DrawHLine(startXPos, int16(yPos), endXPos-startXPos+1)
 	}
 }
 
-// updateSpan widens the span at (yPos) to include xPos.
-func updateSpan(spans map[int16]scanSpan, xPos, yPos int16) {
-	row := spans[yPos]
-	row.AddPoint(xPos)
-	spans[yPos] = row
-}
-
-// scanAddLineToSpans rasterizes a line into spans using Bresenham rules (no clipping).
-func scanAddLineToSpans(spans map[int16]scanSpan, x0, y0, x1, y1 int16) {
+// scanAddLineToSpans rasterizes a line into spans using Bresenham rules.
+func scanAddLineToSpans(spans []scanSpan, x0, y0, x1, y1 int16) {
 	// Vertical
 	if x0 == x1 {
 		startYPos, endYPos := y0, y1
@@ -773,7 +839,7 @@ func scanAddLineToSpans(spans map[int16]scanSpan, x0, y0, x1, y1 int16) {
 			startYPos, endYPos = endYPos, startYPos
 		}
 		for currentYPos := startYPos; currentYPos <= endYPos; currentYPos++ {
-			updateSpan(spans, x0, currentYPos)
+			addSpan(spans, x0, currentYPos)
 		}
 		return
 	}
@@ -784,7 +850,7 @@ func scanAddLineToSpans(spans map[int16]scanSpan, x0, y0, x1, y1 int16) {
 			startXPos, endXPos = endXPos, startXPos
 		}
 		for currentXPos := startXPos; currentXPos <= endXPos; currentXPos++ {
-			updateSpan(spans, currentXPos, y0)
+			addSpan(spans, currentXPos, y0)
 		}
 		return
 	}
@@ -809,9 +875,9 @@ func scanAddLineToSpans(spans map[int16]scanSpan, x0, y0, x1, y1 int16) {
 
 	for currentXPos := x0; currentXPos <= x1; currentXPos++ {
 		if steep {
-			updateSpan(spans, currentYPos, currentXPos)
+			addSpan(spans, currentYPos, currentXPos)
 		} else {
-			updateSpan(spans, currentXPos, currentYPos)
+			addSpan(spans, currentXPos, currentYPos)
 		}
 		errorAccumulator -= deltaY
 		if errorAccumulator < 0 {

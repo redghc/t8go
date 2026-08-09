@@ -159,7 +159,8 @@ func (d *display) ClearDisplay() {
 
 // Command sends a single command byte to the display
 func (d *display) Command(cmd byte) error {
-	return d.bus.WriteRegister(d.address, CONTROL_CMD_SINGLE, []byte{cmd})
+	d.cmdBuf[0] = cmd
+	return d.bus.WriteRegister(d.address, CONTROL_CMD_SINGLE, d.cmdBuf[:1])
 }
 
 // CommandStream writes multiple command bytes with a single control prefix.
@@ -234,6 +235,87 @@ func (d *display) DisplayRegion(x0, y0, x1, y1 int) error {
 		}
 	}
 	return nil
+}
+
+// FillHRun sets or clears a horizontal run of pixels from x0 to x1 inclusive at row y.
+// Out-of-bounds coordinates are clipped, and runs outside the display are ignored.
+func (d *display) FillHRun(x0, x1, y int16, on bool) {
+	if y < 0 || y >= int16(d.height) {
+		return
+	}
+	if x0 < 0 {
+		x0 = 0
+	}
+	if x1 >= int16(d.width) {
+		x1 = int16(d.width) - 1
+	}
+	if x1 < x0 {
+		return
+	}
+
+	mask := uint8(1 << (y & 7))
+	base := int(y>>3) * d.stride
+	for c := int(x0); c <= int(x1); c++ {
+		if on {
+			d.buffer[base+c] |= mask
+		} else {
+			d.buffer[base+c] &^= mask
+		}
+	}
+}
+
+// FillRect sets or clears a rectangular region with inclusive bounds.
+// Out-of-bounds coordinates are clipped, and regions outside the display are ignored.
+func (d *display) FillRect(x0, y0, x1, y1 int16, on bool) {
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+	if x1 >= int16(d.width) {
+		x1 = int16(d.width) - 1
+	}
+	if y1 >= int16(d.height) {
+		y1 = int16(d.height) - 1
+	}
+	if x1 < x0 || y1 < y0 {
+		return
+	}
+
+	startPage := int(y0 >> 3)
+	endPage := int(y1 >> 3)
+
+	for page := startPage; page <= endPage; page++ {
+		var lo, hi uint8
+		if page == startPage {
+			lo = uint8(y0 & 7)
+		}
+		if page == endPage {
+			hi = uint8(y1 & 7)
+		} else {
+			hi = 7
+		}
+
+		var mask uint8
+		for b := lo; b <= hi; b++ {
+			mask |= 1 << b
+		}
+
+		rowOffset := page * d.stride
+		for c := int(x0); c <= int(x1); c++ {
+			bi := rowOffset + c
+			if on {
+				if mask == 0xFF {
+					d.buffer[bi] = 0xFF
+				} else {
+					d.buffer[bi] |= mask
+				}
+			} else {
+				d.buffer[bi] &^= mask
+			}
+		}
+	}
 }
 
 // SetPixel sets a pixel at the given coordinates

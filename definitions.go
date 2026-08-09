@@ -9,12 +9,16 @@ type IDisplay interface {
 	BufferSize() int              // BufferSize returns the size in bytes of the display buffer
 	Buffer() []byte               // Buffer returns the underlying display buffer
 
-	ClearBuffer()                 // ClearBuffer clears the display buffer without updating the physical display
-	ClearDisplay()                // ClearDisplay clears both buffer and physical display
-	Command(cmd byte) error       // Command sends a command byte to the display
-	Display() error               // Display sends the current buffer to the physical display
-	SetPixel(x, y int16, on bool) // SetPixel sets a pixel at (x, y) to on/off
-	GetPixel(x, y uint8) bool     // GetPixel returns the state of a pixel at (x, y)
+	ClearBuffer()                           // ClearBuffer clears the display buffer without updating the physical display
+	ClearDisplay()                          // ClearDisplay clears both buffer and physical display
+	Command(cmd byte) error                 // Command sends a command byte to the display
+	Display() error                         // Display sends the current buffer to the physical display
+	DisplayRegion(x0, y0, x1, y1 int) error // DisplayRegion updates a rectangular region of the physical display
+	SetPixel(x, y int16, on bool)           // SetPixel sets a pixel at (x, y) to on/off
+	GetPixel(x, y uint8) bool               // GetPixel returns the state of a pixel at (x, y)
+
+	FillHRun(x0, x1, y int16, on bool)      // FillHRun sets or clears a horizontal run of pixels from x0 to x1 inclusive at row y
+	FillRect(x0, y0, x1, y1 int16, on bool) // FillRect sets or clears a rectangular region with inclusive bounds
 }
 
 // ----------
@@ -53,6 +57,7 @@ type IDisplayDrawer interface {
 	ClearDisplay()
 	Command(cmd byte) error
 	Display() error
+	DisplayAll() error
 	SetPixel(x, y int16, on bool)
 	GetPixel(x, y uint8) bool
 
@@ -87,11 +92,21 @@ type IDisplayDrawer interface {
 // It wraps a Display interface and provides methods for drawing various shapes
 // such as lines, rectangles, circles, and other geometric primitives.
 type T8Go struct {
-	display IDisplay // The underlying display interface
-	buffer  []byte   // Internal buffer for graphics operations
+	display IDisplay   // The underlying display interface
+	width   int16      // Display width in pixels (cached)
+	height  int16      // Display height in pixels (cached)
+	scratch []scanSpan // Reusable scanline accumulator (sized to display height)
+	dirty   dirtyRect  // Dirty region tracked for partial display updates
 }
 
 var _ IDisplayDrawer = (*T8Go)(nil) // Ensure T8Go implements DisplayDrawer
+
+// dirtyRect tracks the bounding box of pixels modified since the last flush.
+// When valid is false, nothing has been drawn and Display can be skipped.
+type dirtyRect struct {
+	valid          bool
+	x0, y0, x1, y1 int16
+}
 
 // ----------
 
@@ -158,7 +173,7 @@ type arcAccum struct {
 // arcProcessPerimeter samples 8-way symmetric perimeter points, filters by angle range,
 // widens spans, and updates endpoints closest to angleStart/angleEnd.
 func (accum *arcAccum) arcProcessPerimeter(
-	spans map[int16]scanSpan,
+	spans []scanSpan,
 	centerX, centerY, offsetX, offsetY int16,
 	angleStart, angleEnd uint8,
 ) {
@@ -181,7 +196,7 @@ func (accum *arcAccum) arcProcessPerimeter(
 
 	for _, c := range candidates {
 		if helpers.InAngleRange(c.ang, angleStart, angleEnd) {
-			updateSpan(spans, c.x, c.y)
+			addSpan(spans, c.x, c.y)
 
 			if d := helpers.ArcAngleDistance(c.ang, angleStart); d < accum.bestStartAngleDiff {
 				accum.bestStartAngleDiff, accum.startEndX, accum.startEndY = d, c.x, c.y

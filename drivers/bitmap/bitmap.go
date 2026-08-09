@@ -127,6 +127,28 @@ func (d *display) GetPixel(x, y uint8) bool {
 	return d.buffer[byteIndex]&bitMask != 0
 }
 
+// FillHRun fills a horizontal run of pixels at the given y coordinate.
+func (d *display) FillHRun(x0, x1, y int16, on bool) {
+	for x := x0; x <= x1; x++ {
+		d.SetPixel(x, y, on)
+	}
+}
+
+// FillRect fills a rectangular region of pixels.
+func (d *display) FillRect(x0, y0, x1, y1 int16, on bool) {
+	for y := y0; y <= y1; y++ {
+		for x := x0; x <= x1; x++ {
+			d.SetPixel(x, y, on)
+		}
+	}
+}
+
+// DisplayRegion is a no-op for bitmap output: the whole file is
+// rewritten on each flush, so the region argument is irrelevant.
+func (d *display) DisplayRegion(x0, y0, x1, y1 int) error {
+	return d.Display()
+}
+
 // saveBMP saves the display buffer as a BMP file
 func (d *display) saveBMP() error {
 	file, err := os.Create(d.filename)
@@ -194,18 +216,6 @@ func (d *display) saveBMP() error {
 		rowStart := int64(bmpRow) * int64(rowSize)
 
 		for x := int16(0); x < int16(width); x += 8 {
-			// Get the source byte from our buffer
-			srcByteIndex := int(x/8) + (int(y)/8)*int(d.width)
-			var srcByte uint8
-			if srcByteIndex < len(d.buffer) {
-				// Extract the relevant bits for this row from the source byte
-				bitOffset := y & 7
-				srcByte = (d.buffer[srcByteIndex] >> bitOffset) & 1
-				if srcByte != 0 {
-					srcByte = 0xFF
-				}
-			}
-
 			// Convert 8 pixels at a time
 			dstByteIndex := rowStart + int64(x/8)
 			if dstByteIndex < int64(len(pixelData)) {
