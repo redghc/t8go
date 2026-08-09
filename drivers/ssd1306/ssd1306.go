@@ -391,7 +391,7 @@ func (d *display) SetPixel(x, y int16, color bool) {
 
 // GetPixel returns the current pixel state from the backbuffer.
 func (d *display) GetPixel(x, y uint8) bool {
-	if x < 0 || y < 0 || x >= d.width || y >= d.height {
+	if x >= d.width || y >= d.height {
 		return false
 	}
 

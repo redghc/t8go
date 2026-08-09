@@ -80,6 +80,23 @@ func (f *optFake) FillHRun(x0, x1, y int16, on bool) {
 	}
 }
 
+func computePageMask(page, startPage, endPage int, y0, y1 int16) uint8 {
+	var lo, hi uint8
+	if page == startPage {
+		lo = uint8(y0 & 7)
+	}
+	if page == endPage {
+		hi = uint8(y1 & 7)
+	} else {
+		hi = 7
+	}
+	var mask uint8
+	for b := lo; b <= hi; b++ {
+		mask |= 1 << b
+	}
+	return mask
+}
+
 func (f *optFake) FillRect(x0, y0, x1, y1 int16, on bool) {
 	if x0 < 0 {
 		x0 = 0
@@ -99,19 +116,7 @@ func (f *optFake) FillRect(x0, y0, x1, y1 int16, on bool) {
 	startPage := int(y0 >> 3)
 	endPage := int(y1 >> 3)
 	for page := startPage; page <= endPage; page++ {
-		var lo, hi uint8
-		if page == startPage {
-			lo = uint8(y0 & 7)
-		}
-		if page == endPage {
-			hi = uint8(y1 & 7)
-		} else {
-			hi = 7
-		}
-		var mask uint8
-		for b := lo; b <= hi; b++ {
-			mask |= 1 << b
-		}
+		mask := computePageMask(page, startPage, endPage, y0, y1)
 		rowOffset := page * f.stride
 		for c := int(x0); c <= int(x1); c++ {
 			bi := rowOffset + c
