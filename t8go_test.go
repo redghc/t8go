@@ -228,81 +228,122 @@ func (r *recordingDisplay) Display() error {
 func TestDirtyRegion(t *testing.T) {
 	t.Parallel()
 
-	// Nothing drawn -> Display is a no-op.
+	// Each subtest draws something (or nothing), flushes, and asserts the
+	// recorded region. secondFlush exercises the no-op-after-flush path.
+	cases := []struct {
+		name        string
+		draw        func(g t8go.IDisplayDrawer)
+		useAll      bool
+		secondFlush bool
+		wantFlush   bool
+		wantX0      int
+		wantY0      int
+		wantX1      int
+		wantY1      int
+	}{
+		{
+			name:      "no-op when nothing drawn",
+			draw:      func(t8go.IDisplayDrawer) {},
+			wantFlush: false,
+		},
+		{
+			name:      "box marks its bounding box",
+			draw:      func(g t8go.IDisplayDrawer) { g.DrawBoxFill(10, 10, 20, 20) },
+			wantFlush: true, wantX0: 10, wantY0: 10, wantX1: 29, wantY1: 29,
+		},
+		{
+			name:      "circle marks its bounding box",
+			draw:      func(g t8go.IDisplayDrawer) { g.DrawCircleFill(64, 32, 20, t8go.DrawAll) },
+			wantFlush: true, wantX0: 44, wantY0: 12, wantX1: 84, wantY1: 52,
+		},
+		{
+			name:      "line marks endpoints' bounding box",
+			draw:      func(g t8go.IDisplayDrawer) { g.DrawLine(10, 10, 100, 50) },
+			wantFlush: true, wantX0: 10, wantY0: 10, wantX1: 100, wantY1: 50,
+		},
+		{
+			name:        "no-op after flush",
+			draw:        func(g t8go.IDisplayDrawer) { g.DrawBoxFill(0, 0, 1, 1) },
+			secondFlush: true,
+			wantFlush:   true, wantX0: 0, wantY0: 0, wantX1: 0, wantY1: 0,
+		},
+		{
+			name:      "DisplayAll always flushes",
+			draw:      func(t8go.IDisplayDrawer) {},
+			useAll:    true,
+			wantFlush: true, wantX0: 0, wantY0: 0, wantX1: 127, wantY1: 63,
+		},
+		{
+			name:      "ClearBuffer marks the whole screen",
+			draw:      func(g t8go.IDisplayDrawer) { g.ClearBuffer() },
+			wantFlush: true, wantX0: 0, wantY0: 0, wantX1: 127, wantY1: 63,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			runDirtyCase(t, tc)
+		})
+	}
+}
+
+// runDirtyCase runs one entry from the dirty-region table.
+func runDirtyCase(t *testing.T, tc struct {
+	name        string
+	draw        func(g t8go.IDisplayDrawer)
+	useAll      bool
+	secondFlush bool
+	wantFlush   bool
+	wantX0      int
+	wantY0      int
+	wantX1      int
+	wantY1      int
+}) {
+	disp, g := newRecordingCtx()
+	tc.draw(g)
+	flush := g.Display
+	if tc.useAll {
+		flush = g.DisplayAll
+	}
+	if err := flush(); err != nil {
+		t.Fatal(err)
+	}
+	if tc.secondFlush {
+		before := disp.sawRegion
+		if err := g.Display(); err != nil {
+			t.Fatal(err)
+		}
+		if disp.sawRegion != before {
+			t.Error("Display() flushed again with no new pixels")
+			return
+		}
+	}
+	if !tc.wantFlush {
+		if disp.sawRegion {
+			t.Error("Display() flushed with no dirty pixels")
+		}
+		return
+	}
+	assertRegion(t, disp, tc.wantX0, tc.wantY0, tc.wantX1, tc.wantY1)
+}
+
+// newRecordingCtx builds a fresh drawing context so each subtest has its
+// own state and can safely run in parallel.
+func newRecordingCtx() (*recordingDisplay, t8go.IDisplayDrawer) {
 	disp := &recordingDisplay{fakeDisplay: newFake(128, 64)}
-	g := t8go.New(disp)
-	if err := g.Display(); err != nil {
-		t.Fatal(err)
-	}
-	if disp.sawRegion {
-		t.Error("Display() flushed with no dirty pixels")
-	}
+	return disp, t8go.New(disp)
+}
 
-	// Draw -> only the drawn bounding box is flushed.
-	g.DrawBoxFill(10, 10, 20, 20)
-	if err := g.Display(); err != nil {
-		t.Fatal(err)
-	}
+// assertRegion fails the test if the recorded flush region doesn't match.
+func assertRegion(t *testing.T, disp *recordingDisplay, x0, y0, x1, y1 int) {
+	t.Helper()
 	if !disp.sawRegion {
-		t.Fatal("expected a region flush after drawing")
+		t.Fatal("expected a region flush")
 	}
-	if disp.regionX0 != 10 || disp.regionY0 != 10 || disp.regionX1 != 29 || disp.regionY1 != 29 {
-		t.Errorf("bad region: got (%d,%d)-(%d,%d)", disp.regionX0, disp.regionY0, disp.regionX1, disp.regionY1)
-	}
-
-	// Shape primitives mark their bounding box as dirty.
-	disp.sawRegion = false
-	g.DrawCircleFill(64, 32, 20, t8go.DrawAll)
-	if err := g.Display(); err != nil {
-		t.Fatal(err)
-	}
-	if !disp.sawRegion {
-		t.Fatal("expected a region flush after DrawCircleFill")
-	}
-	if disp.regionX0 != 44 || disp.regionY0 != 12 || disp.regionX1 != 84 || disp.regionY1 != 52 {
-		t.Errorf("bad circle region: got (%d,%d)-(%d,%d)", disp.regionX0, disp.regionY0, disp.regionX1, disp.regionY1)
-	}
-
-	// A diagonal line marks the bounding box of its endpoints.
-	disp.sawRegion = false
-	g.DrawLine(10, 10, 100, 50)
-	if err := g.Display(); err != nil {
-		t.Fatal(err)
-	}
-	if !disp.sawRegion {
-		t.Fatal("expected a region flush after DrawLine")
-	}
-	if disp.regionX0 != 10 || disp.regionY0 != 10 || disp.regionX1 != 100 || disp.regionY1 != 50 {
-		t.Errorf("bad line region: got (%d,%d)-(%d,%d)", disp.regionX0, disp.regionY0, disp.regionX1, disp.regionY1)
-	}
-
-	// After the flush there is nothing new to flush.
-	disp.sawRegion = false
-	if err := g.Display(); err != nil {
-		t.Fatal(err)
-	}
-	if disp.sawRegion {
-		t.Error("Display() flushed again with no new pixels")
-	}
-
-	// DisplayAll always flushes regardless of dirty state.
-	if err := g.DisplayAll(); err != nil {
-		t.Fatal(err)
-	}
-	if !disp.sawRegion {
-		t.Error("DisplayAll() did not flush")
-	}
-
-	// ClearBuffer marks the whole screen dirty.
-	disp.sawRegion = false
-	g.ClearBuffer()
-	if err := g.Display(); err != nil {
-		t.Fatal(err)
-	}
-	if !disp.sawRegion {
-		t.Error("Display() after ClearBuffer did not flush")
-	}
-	if disp.regionX0 != 0 || disp.regionY0 != 0 || disp.regionX1 != 127 || disp.regionY1 != 63 {
-		t.Errorf("bad full-region: got (%d,%d)-(%d,%d)", disp.regionX0, disp.regionY0, disp.regionX1, disp.regionY1)
+	if disp.regionX0 != x0 || disp.regionY0 != y0 || disp.regionX1 != x1 || disp.regionY1 != y1 {
+		t.Errorf("bad region: got (%d,%d)-(%d,%d), want (%d,%d)-(%d,%d)",
+			disp.regionX0, disp.regionY0, disp.regionX1, disp.regionY1,
+			x0, y0, x1, y1)
 	}
 }
