@@ -22,7 +22,7 @@ func newOptFake(w, h uint16) *optFake {
 		width:  w,
 		height: h,
 		stride: int(w),
-		buffer: make([]byte, int(w)*int(h)/8),
+		buffer: make([]byte, int(w)*((int(h)+7)/8)),
 	}
 }
 

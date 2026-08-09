@@ -114,18 +114,19 @@ type Point struct {
 type DrawQuadrants uint8
 
 const (
-	DrawNone        DrawQuadrants = 0
 	DrawTopLeft     DrawQuadrants = 1 << 0
 	DrawTopRight    DrawQuadrants = 1 << 1
 	DrawBottomRight DrawQuadrants = 1 << 2
 	DrawBottomLeft  DrawQuadrants = 1 << 3
-	DrawAll                       = DrawTopLeft | DrawTopRight | DrawBottomRight | DrawBottomLeft
+	DrawAll         DrawQuadrants = DrawTopLeft | DrawTopRight | DrawBottomRight | DrawBottomLeft
 )
 
 // has checks if the given quadrant should be drawn.
-// If mask is DrawNone, it is interpreted as "draw all".
+// The zero value (no bits set) selects no quadrant, drawing nothing.
+// Use DrawAll (or the explicit bitwise OR of every flag) to render the
+// complete circle or ellipse.
 func (mask DrawQuadrants) has(quadrant DrawQuadrants) bool {
-	return mask == DrawNone || (mask&quadrant) != 0
+	return mask&quadrant != 0
 }
 
 // ----------

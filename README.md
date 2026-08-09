@@ -193,14 +193,16 @@ The `DrawQuadrants` type allows selective rendering of circle/ellipse portions:
 
 ```go
 const (
-    DrawNone        DrawQuadrants = 0
     DrawTopLeft     DrawQuadrants = 1 << 0
     DrawTopRight    DrawQuadrants = 1 << 1
     DrawBottomRight DrawQuadrants = 1 << 2
     DrawBottomLeft  DrawQuadrants = 1 << 3
-    DrawAll                       = DrawTopLeft | DrawTopRight | DrawBottomRight | DrawBottomLeft
+    DrawAll         DrawQuadrants = DrawTopLeft | DrawTopRight | DrawBottomRight | DrawBottomLeft
 )
 ```
+
+A zero `DrawQuadrants` value (no bits set) selects no quadrant and draws nothing.
+Use `DrawAll` to render the complete circle or ellipse.
 
 ### Angle System
 

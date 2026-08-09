@@ -1,6 +1,8 @@
 package t8go_test
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -23,7 +25,7 @@ func newFake(w, h uint16) *fakeDisplay {
 		width:  w,
 		height: h,
 		stride: int(w),
-		buffer: make([]byte, int(w)*int(h)/8),
+		buffer: make([]byte, int(w)*((int(h)+7)/8)),
 	}
 }
 
@@ -345,5 +347,392 @@ func assertRegion(t *testing.T, disp *recordingDisplay, x0, y0, x1, y1 int) {
 		t.Errorf("bad region: got (%d,%d)-(%d,%d), want (%d,%d)-(%d,%d)",
 			disp.regionX0, disp.regionY0, disp.regionX1, disp.regionY1,
 			x0, y0, x1, y1)
+	}
+}
+
+// errorDisplay wraps fakeDisplay and lets individual methods return errors on
+// demand, so we can assert that T8Go propagates display-driver errors.
+type errorDisplay struct {
+	*fakeDisplay
+
+	displayErr error
+	regionErr  error
+	cmdErr     error
+}
+
+func (e *errorDisplay) Display() error                         { return e.displayErr }
+func (e *errorDisplay) DisplayRegion(int, int, int, int) error { return e.regionErr }
+func (e *errorDisplay) Command(byte) error                     { return e.cmdErr }
+
+func TestPixelPrimitives(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+
+	if w, h := g.Size(); w != 16 || h != 8 {
+		t.Errorf("Size = (%d,%d), want (16,8)", w, h)
+	}
+	if got := g.BufferSize(); got != 16 {
+		t.Errorf("BufferSize = %d, want 16", got)
+	}
+	if buf := g.Buffer(); len(buf) != 16 {
+		t.Errorf("Buffer length = %d, want 16", len(buf))
+	}
+	if g.GetDisplay() == nil {
+		t.Error("GetDisplay returned nil")
+	}
+
+	g.DrawPixel(3, 4)
+	if !g.GetPixel(3, 4) {
+		t.Error("GetPixel(3,4) = false after DrawPixel")
+	}
+	if g.GetPixel(0, 0) {
+		t.Error("GetPixel(0,0) = true on empty buffer")
+	}
+}
+
+func TestSetPixelOutOfBoundsDoesNotMarkDirty(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+
+	for _, p := range []struct{ x, y int16 }{
+		{-1, 0}, {0, -1}, {16, 0}, {0, 8}, {100, 100}, {-100, -100},
+	} {
+		g.SetPixel(p.x, p.y, true)
+	}
+	if err := g.Display(); err != nil {
+		t.Fatalf("Display returned %v", err)
+	}
+}
+
+func TestSetPixelOnFalse(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+
+	g.DrawPixel(5, 3)
+	if !g.GetPixel(5, 3) {
+		t.Fatal("pixel not set after DrawPixel")
+	}
+	g.SetPixel(5, 3, false)
+	if g.GetPixel(5, 3) {
+		t.Error("pixel still on after SetPixel(false)")
+	}
+}
+
+func TestClearBufferClearsBuffer(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+
+	g.DrawPixel(0, 0)
+	g.DrawPixel(15, 7)
+	g.ClearBuffer()
+	if g.GetPixel(0, 0) || g.GetPixel(15, 7) {
+		t.Error("ClearBuffer left pixels on")
+	}
+}
+
+func TestClearDisplayResetsDirty(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+
+	g.DrawPixel(0, 0)
+	g.ClearDisplay()
+	if g.GetPixel(0, 0) {
+		t.Error("ClearDisplay did not clear buffer")
+	}
+	if err := g.Display(); err != nil {
+		t.Fatalf("Display returned %v", err)
+	}
+}
+
+func TestCommandPassthrough(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+	if err := g.Command(0xAE); err != nil {
+		t.Errorf("Command returned %v, want nil", err)
+	}
+}
+
+func TestDisplayErrorPropagates(t *testing.T) {
+	t.Parallel()
+	ed := &errorDisplay{fakeDisplay: newFake(16, 8), regionErr: errors.New("boom")}
+	g := t8go.New(ed)
+
+	g.DrawPixel(1, 1)
+	err := g.Display()
+	if err == nil || err.Error() != "boom" {
+		t.Errorf("Display err = %v, want boom", err)
+	}
+	if err2 := g.Display(); err2 != nil {
+		t.Errorf("second Display err = %v, want nil (dirty must reset on error)", err2)
+	}
+}
+
+func TestDisplayAllErrorPropagates(t *testing.T) {
+	t.Parallel()
+	ed := &errorDisplay{fakeDisplay: newFake(16, 8), displayErr: errors.New("io")}
+	g := t8go.New(ed)
+	if err := g.DisplayAll(); err == nil || err.Error() != "io" {
+		t.Errorf("DisplayAll err = %v, want io", err)
+	}
+}
+
+func TestDrawHLineZeroLengthNoOp(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+	g.DrawHLine(5, 3, 0)
+	if err := g.Display(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDrawVLineZeroLengthNoOp(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+	g.DrawVLine(5, 3, 0)
+	if err := g.Display(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDrawHLineNegativeLength(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+	g.DrawHLine(10, 3, -5)
+	for _, x := range []int16{6, 7, 8, 9, 10} {
+		if !g.GetPixel(uint8(x), 3) {
+			t.Errorf("pixel (%d,3) not set", x)
+		}
+	}
+}
+
+func TestDrawVLineNegativeLength(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+	g.DrawVLine(3, 5, -4)
+	for _, y := range []int16{2, 3, 4, 5} {
+		if !g.GetPixel(3, uint8(y)) {
+			t.Errorf("pixel (3,%d) not set", y)
+		}
+	}
+}
+
+func TestDrawBoxTooSmallNoOp(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ w, h int16 }{
+		{1, 5}, {5, 1}, {1, 1}, {0, 5}, {5, 0}, {0, 0},
+	} {
+		disp := newFake(16, 8)
+		g := t8go.New(disp)
+		g.DrawBox(2, 2, tc.w, tc.h)
+		for y := int16(0); y < 8; y++ {
+			for x := int16(0); x < 16; x++ {
+				if g.GetPixel(uint8(x), uint8(y)) {
+					t.Errorf("box %dx%d: unexpected pixel at (%d,%d)", tc.w, tc.h, x, y)
+				}
+			}
+		}
+	}
+}
+
+func TestDrawBoxFillZeroDimNoOp(t *testing.T) {
+	t.Parallel()
+	disp := newFake(16, 8)
+	g := t8go.New(disp)
+	g.DrawBoxFill(5, 5, 0, 5)
+	g.DrawBoxFill(5, 5, 5, 0)
+	if err := g.Display(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDrawRoundBoxNegativeRadiusEqualsBox(t *testing.T) {
+	t.Parallel()
+	dispA := newFake(20, 16)
+	gA := t8go.New(dispA)
+	gA.DrawRoundBox(2, 2, 10, 8, -3)
+	bufA := append([]byte{}, dispA.buffer...)
+
+	dispB := newFake(20, 16)
+	gB := t8go.New(dispB)
+	gB.DrawBox(2, 2, 10, 8)
+
+	if !bytes.Equal(bufA, dispB.buffer) {
+		t.Error("DrawRoundBox with negative radius should equal DrawBox")
+	}
+}
+
+func TestDrawPolygonTooFewVerticesNoOp(t *testing.T) {
+	t.Parallel()
+	disp := newFake(20, 20)
+	g := t8go.New(disp)
+	g.DrawPolygon(t8go.Point{5, 5})
+	g.DrawPolygon(t8go.Point{5, 5}, t8go.Point{10, 10})
+	g.DrawPolygonFill(t8go.Point{5, 5})
+	g.DrawPolygonFill(t8go.Point{5, 5}, t8go.Point{10, 10})
+	if err := g.Display(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDrawCircleRadiusZeroNoOp(t *testing.T) {
+	t.Parallel()
+	for _, r := range []int16{0, -1, -100} {
+		disp := newFake(20, 20)
+		g := t8go.New(disp)
+		g.DrawCircle(10, 10, r, t8go.DrawAll)
+		g.DrawCircleFill(10, 10, r, t8go.DrawAll)
+		if err := g.Display(); err != nil {
+			t.Errorf("radius %d: %v", r, err)
+		}
+	}
+}
+
+func TestDrawCircleMaskZeroDrawsNothing(t *testing.T) {
+	t.Parallel()
+	// The zero DrawQuadrants value (no bits set) must select no quadrant.
+	// DrawAll is required to render the full disc.
+	disp := newFake(20, 20)
+	g := t8go.New(disp)
+	g.DrawCircle(10, 10, 5, 0)
+	g.DrawCircleFill(10, 10, 5, 0)
+	if err := g.Display(); err != nil {
+		t.Fatal(err)
+	}
+	for y := int16(0); y < 20; y++ {
+		for x := int16(0); x < 20; x++ {
+			if g.GetPixel(uint8(x), uint8(y)) {
+				t.Errorf("mask=0: unexpected pixel at (%d,%d)", x, y)
+			}
+		}
+	}
+}
+
+func TestDrawEllipseRadiusZeroNoOp(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ rx, ry int16 }{
+		{0, 5}, {5, 0}, {-1, 5}, {5, -1}, {0, 0},
+	} {
+		disp := newFake(20, 20)
+		g := t8go.New(disp)
+		g.DrawEllipse(10, 10, tc.rx, tc.ry, t8go.DrawAll)
+		g.DrawEllipseFill(10, 10, tc.rx, tc.ry, t8go.DrawAll)
+		if err := g.Display(); err != nil {
+			t.Errorf("rx=%d ry=%d: %v", tc.rx, tc.ry, err)
+		}
+	}
+}
+
+func TestDrawArcRadiusZeroNoOp(t *testing.T) {
+	t.Parallel()
+	disp := newFake(20, 20)
+	g := t8go.New(disp)
+	g.DrawArc(10, 10, 0, 0, 64)
+	g.DrawArcFill(10, 10, 0, 0, 64)
+	if err := g.Display(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDrawArcFullArcEqualsCircle(t *testing.T) {
+	t.Parallel()
+	dispArc := newFake(20, 20)
+	gArc := t8go.New(dispArc)
+	gArc.DrawArc(10, 10, 5, 0, 0)
+
+	dispCircle := newFake(20, 20)
+	gCircle := t8go.New(dispCircle)
+	gCircle.DrawCircle(10, 10, 5, t8go.DrawAll)
+
+	if !bytes.Equal(dispArc.buffer, dispCircle.buffer) {
+		t.Error("DrawArc(...,start==end) should equal DrawCircle")
+	}
+}
+
+func TestDrawArcFillFullArcEqualsCircleFill(t *testing.T) {
+	t.Parallel()
+	dispArc := newFake(20, 20)
+	gArc := t8go.New(dispArc)
+	gArc.DrawArcFill(10, 10, 5, 0, 0)
+
+	dispCircle := newFake(20, 20)
+	gCircle := t8go.New(dispCircle)
+	gCircle.DrawCircleFill(10, 10, 5, t8go.DrawAll)
+
+	if !bytes.Equal(dispArc.buffer, dispCircle.buffer) {
+		t.Error("DrawArcFill(...,start==end) should equal DrawCircleFill")
+	}
+}
+
+func TestDrawArcWrappedInterval(t *testing.T) {
+	t.Parallel()
+	// [224, 32) covers 224..255 and 0..31 (the East + a bit of N/S).
+	// Pixel at angle 0 (East): (30, 20) must be ON.
+	// Pixel at angle 128 (West): (10, 20) must be OFF.
+	disp := newFake(40, 40)
+	g := t8go.New(disp)
+	g.DrawArc(20, 20, 10, 224, 32)
+	if !g.GetPixel(30, 20) {
+		t.Error("expected pixel (30,20) on for angle 0 in [224,32)")
+	}
+	if g.GetPixel(10, 20) {
+		t.Error("unexpected pixel (10,20) on for angle 128 not in [224,32)")
+	}
+}
+
+func TestDirtyTrackingForPrimitives(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		draw   func(g t8go.IDisplayDrawer)
+		wantX0 int
+		wantY0 int
+		wantX1 int
+		wantY1 int
+	}{
+		{
+			name: "polygon",
+			draw: func(g t8go.IDisplayDrawer) {
+				g.DrawPolygon(t8go.Point{10, 10}, t8go.Point{30, 10}, t8go.Point{30, 30}, t8go.Point{10, 30})
+			},
+			// Even-odd pixel-center sampling: the rightmost/bottommost
+			// edge of the bounding box is not drawn.
+			wantX0: 10, wantY0: 10, wantX1: 29, wantY1: 29,
+		},
+		{
+			name:   "roundbox",
+			draw:   func(g t8go.IDisplayDrawer) { g.DrawRoundBoxFill(10, 10, 30, 20, 4) },
+			wantX0: 10, wantY0: 10, wantX1: 39, wantY1: 29,
+		},
+		{
+			name:   "triangle",
+			draw:   func(g t8go.IDisplayDrawer) { g.DrawTriangleFill(20, 5, 5, 30, 35, 30) },
+			wantX0: 5, wantY0: 5, wantX1: 35, wantY1: 30,
+		},
+		{
+			name:   "ellipse",
+			draw:   func(g t8go.IDisplayDrawer) { g.DrawEllipse(64, 32, 20, 10, t8go.DrawAll) },
+			wantX0: 44, wantY0: 22, wantX1: 84, wantY1: 42,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			disp, g := newRecordingCtx()
+			tc.draw(g)
+			if err := g.Display(); err != nil {
+				t.Fatal(err)
+			}
+			assertRegion(t, disp, tc.wantX0, tc.wantY0, tc.wantX1, tc.wantY1)
+		})
 	}
 }

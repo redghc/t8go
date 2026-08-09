@@ -221,3 +221,72 @@ func TestAngleEndpoint(t *testing.T) {
 		}
 	})
 }
+
+func TestClipRect(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name                           string
+		x0, y0, x1, y1, w, h           int16
+		wantX0, wantY0, wantX1, wantY1 int16
+		wantOK                         bool
+	}{
+		{"fully inside", 2, 2, 5, 5, 20, 20, 2, 2, 5, 5, true},
+		{"clips left", -3, 2, 5, 5, 20, 20, 0, 2, 5, 5, true},
+		{"clips right", 15, 2, 25, 5, 20, 20, 15, 2, 19, 5, true},
+		{"clips top", 2, -3, 5, 5, 20, 20, 2, 0, 5, 5, true},
+		{"clips bottom", 2, 2, 5, 25, 20, 20, 2, 2, 5, 19, true},
+		{"clips all sides", -3, -3, 25, 25, 20, 20, 0, 0, 19, 19, true},
+		{"swapped x", 5, 2, 2, 5, 20, 20, 2, 2, 5, 5, true},
+		{"swapped y", 2, 5, 5, 2, 20, 20, 2, 2, 5, 5, true},
+		{"single pixel inside", 4, 4, 4, 4, 10, 10, 4, 4, 4, 4, true},
+		{"fully outside left", -10, 0, -5, 5, 20, 20, 0, 0, 0, 0, false},
+		{"fully outside right", 25, 0, 30, 5, 20, 20, 0, 0, 0, 0, false},
+		{"fully outside top", 0, -10, 5, -5, 20, 20, 0, 0, 0, 0, false},
+		{"fully outside bottom", 0, 25, 5, 30, 20, 20, 0, 0, 0, 0, false},
+		{"degenerate width after clip", 25, 0, 30, 5, 20, 20, 0, 0, 0, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			x0, y0, x1, y1, ok := helpers.ClipRect(tc.x0, tc.y0, tc.x1, tc.y1, tc.w, tc.h)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if ok && (x0 != tc.wantX0 || y0 != tc.wantY0 || x1 != tc.wantX1 || y1 != tc.wantY1) {
+				t.Errorf("got (%d,%d)-(%d,%d), want (%d,%d)-(%d,%d)",
+					x0, y0, x1, y1, tc.wantX0, tc.wantY0, tc.wantX1, tc.wantY1)
+			}
+		})
+	}
+}
+
+func TestClipSpan(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name           string
+		a0, a1, n      int16
+		wantA0, wantA1 int16
+		wantOK         bool
+	}{
+		{"inside", 2, 5, 20, 2, 5, true},
+		{"clips low", -3, 5, 20, 0, 5, true},
+		{"clips high", 15, 25, 20, 15, 19, true},
+		{"clips both", -3, 25, 20, 0, 19, true},
+		{"swapped", 5, 2, 20, 2, 5, true},
+		{"single inside", 4, 4, 10, 4, 4, true},
+		{"fully above", 25, 30, 20, 0, 0, false},
+		{"fully below", -10, -5, 20, 0, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			a0, a1, ok := helpers.ClipSpan(tc.a0, tc.a1, tc.n)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if ok && (a0 != tc.wantA0 || a1 != tc.wantA1) {
+				t.Errorf("got [%d,%d], want [%d,%d]", a0, a1, tc.wantA0, tc.wantA1)
+			}
+		})
+	}
+}

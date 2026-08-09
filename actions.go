@@ -553,7 +553,7 @@ func floorDiv(a, b int64) int64 {
 // DrawCircle draws an outlined circle centered at (centerX, centerY) with the specified radius.
 // The circle diameter will be 2*radius + 1 pixels.
 // The mask parameter controls which quadrants are drawn using DrawQuadrants flags.
-// Use DrawNone or DrawAll to draw the complete circle.
+// Use DrawAll to draw the complete circle.
 func (t *T8Go) DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants) {
 	if radius <= 0 {
 		return
@@ -608,7 +608,7 @@ func (t *T8Go) drawCircleSection(offsetX, offsetY, centerX, centerY int16, mask 
 
 // DrawCircleFill draws a filled circle centered at (centerX, centerY) with the specified radius.
 // The mask parameter controls which quadrants are filled using DrawQuadrants flags.
-// Use DrawNone or DrawAll to fill the complete circle disc.
+// Use DrawAll to fill the complete circle disc.
 func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants) {
 	if radius <= 0 {
 		return
@@ -617,7 +617,7 @@ func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants
 	// Full disc fast path: compute each column's vertical extent once and
 	// paint it with a page-aligned FillVRun, instead of 8 overlapping
 	// vertical runs per perimeter step.
-	if (mask == DrawNone || mask == DrawAll) && radius < int16(len(t.colExtents)) {
+	if mask == DrawAll && radius < int16(len(t.colExtents)) {
 		t.fillCircle(centerX, centerY, radius)
 		return
 	}
@@ -737,7 +737,7 @@ func (t *T8Go) drawCircleFillSection(offsetX, offsetY, centerX, centerY int16, m
 // DrawEllipse draws an outlined ellipse centered at (centerX, centerY) with specified radii.
 // The radiusX and radiusY parameters define the horizontal and vertical extents.
 // The mask parameter controls which quadrants are drawn using DrawQuadrants flags.
-// Use DrawNone or DrawAll to draw the complete ellipse outline.
+// Use DrawAll to draw the complete ellipse outline.
 // No operation is performed if either radius is less than or equal to zero.
 func (t *T8Go) DrawEllipse(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants) {
 	if radiusX <= 0 || radiusY <= 0 {
@@ -829,7 +829,7 @@ func (t *T8Go) drawEllipseSection(offsetX, offsetY, centerX, centerY int16, mask
 // DrawEllipseFill draws a filled ellipse centered at (centerX, centerY) with specified radii.
 // The radiusX and radiusY parameters define the horizontal and vertical extents.
 // The mask parameter controls which quadrants are filled using DrawQuadrants flags.
-// Use DrawNone or DrawAll to fill the complete ellipse area.
+// Use DrawAll to fill the complete ellipse area.
 // No operation is performed if either radius is less than or equal to zero.
 func (t *T8Go) DrawEllipseFill(centerX, centerY, radiusX, radiusY int16, mask DrawQuadrants) {
 	if radiusX <= 0 || radiusY <= 0 {
@@ -838,7 +838,7 @@ func (t *T8Go) DrawEllipseFill(centerX, centerY, radiusX, radiusY int16, mask Dr
 
 	// Full ellipse fast path: compute each column's vertical extent once and
 	// paint it with a page-aligned FillVRun.
-	if (mask == DrawNone || mask == DrawAll) && radiusX < int16(len(t.colExtents)) {
+	if mask == DrawAll && radiusX < int16(len(t.colExtents)) {
 		t.fillEllipse(centerX, centerY, radiusX, radiusY)
 		return
 	}
