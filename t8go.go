@@ -2,12 +2,12 @@
 // It is designed for embedded systems and micro-controllers, providing comprehensive
 // 2D drawing capabilities optimized for resource-constrained environments.
 // The library supports various drawing operations including pixels, lines, rectangles,
-// circles, ellipses, arcs, and triangles.
+// circles, ellipses, arcs, triangles, and polygons.
 package t8go
 
 // New creates a new T8Go graphics context with the specified display.
-// The display parameter must implement the Display interface.
-// Returns a pointer to a T8Go instance that can be used for drawing operations.
+// The display parameter must implement the IDisplay interface.
+// Returns an IDisplayDrawer interface for high-level drawing operations.
 func New(display IDisplay) IDisplayDrawer {
 	w, h := display.Size()
 

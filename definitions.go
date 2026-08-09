@@ -22,15 +22,13 @@ type IDisplay interface {
 	FillVRun(x, y0, y1 int16, on bool)      // FillVRun sets or clears a vertical run of pixels from y0 to y1 inclusive at column x
 }
 
-// ----------
-
 // IDisplayDrawer is the high-level graphics surface: display management plus
 // shape primitives (lines, boxes, triangles, polygons, circles, ellipses, arcs).
 // Coordinates use int16 so negative (offscreen) values are expressible;
 // pixel queries use uint8 since embedded displays rarely exceed 255 px on a side.
 type IDisplayDrawer interface {
 	GetDisplay() IDisplay
-	Size() (width, height uint16) // Size returns the display dimensions in pixels
+	Size() (width, height uint16)
 	BufferSize() int
 	Buffer() []byte
 	ClearBuffer()
@@ -99,15 +97,11 @@ func (d *dirtyRect) reset() {
 	d.valid = false
 }
 
-// ----------
-
 // Point represents a pixel coordinate in the display space.
 // X and Y are 16-bit signed to allow negative (offscreen) coordinates.
 type Point struct {
 	X, Y int16
 }
-
-// ----------
 
 // DrawQuadrants represents which quadrants of a circle or ellipse should be drawn.
 // It uses bitwise flags to specify combinations of quadrants.
@@ -128,8 +122,6 @@ const (
 func (mask DrawQuadrants) has(quadrant DrawQuadrants) bool {
 	return mask&quadrant != 0
 }
-
-// ----------
 
 // scanSpan stores the min/max X coordinates to fill for a given scan-line Y.
 // This is used internally for filled shape rendering.
