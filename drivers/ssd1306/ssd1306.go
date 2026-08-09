@@ -41,7 +41,7 @@ var _ t8go.IDisplay = &display{}
 
 // * ----- Constructors -----
 
-// NewI2C creates a new SSD1306 display instance using I2C communication
+// NewI2C creates a new SSD1306 display instance using I2C communication.
 func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.IDisplay, error) {
 	if bus == nil {
 		return nil, ErrI2CBusNil
@@ -79,7 +79,7 @@ func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.IDisplay
 	return d, nil
 }
 
-// init initializes the display
+// init initializes the display.
 func (d *display) init(width, height uint8) error {
 	// Determine VCC-dependent settings
 	var chargePump, contrast, preCharge uint8
@@ -129,17 +129,17 @@ func (d *display) init(width, height uint8) error {
 
 // * ----- Getter methods -----
 
-// Size returns the display dimensions as uint16 for interface compatibility
+// Size returns the display dimensions as uint16 for interface compatibility.
 func (d *display) Size() (width, height uint16) {
 	return uint16(d.width), uint16(d.height)
 }
 
-// BufferSize returns the size of the display buffer
+// BufferSize returns the size of the display buffer.
 func (d *display) BufferSize() int {
 	return d.bufSize
 }
 
-// Buffer returns the display buffer
+// Buffer returns the display buffer.
 func (d *display) Buffer() []byte {
 	return d.buffer
 }
@@ -157,7 +157,7 @@ func (d *display) ClearDisplay() {
 	_ = d.Display()
 }
 
-// Command sends a single command byte to the display
+// Command sends a single command byte to the display.
 func (d *display) Command(cmd byte) error {
 	d.cmdBuf[0] = cmd
 	return d.bus.WriteRegister(d.address, CONTROL_CMD_SINGLE, d.cmdBuf[:1])

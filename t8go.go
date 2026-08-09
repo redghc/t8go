@@ -1,5 +1,5 @@
 // Package t8go provides a lightweight graphics library for monochrome displays.
-// It is designed for embedded systems and microcontrollers, providing comprehensive
+// It is designed for embedded systems and micro-controllers, providing comprehensive
 // 2D drawing capabilities optimized for resource-constrained environments.
 // The library supports various drawing operations including pixels, lines, rectangles,
 // circles, ellipses, arcs, and triangles.
@@ -24,7 +24,7 @@ func New(display IDisplay) IDisplayDrawer {
 	}
 }
 
-// GetDisplay returns the underlying display interface
+// GetDisplay returns the underlying display interface.
 func (t *T8Go) GetDisplay() IDisplay {
 	return t.display
 }

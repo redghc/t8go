@@ -99,7 +99,7 @@ type T8Go struct {
 	display    IDisplay   // The underlying display interface
 	width      int16      // Display width in pixels (cached)
 	height     int16      // Display height in pixels (cached)
-	scratch    []scanSpan // Reusable scanline accumulator (sized to display height)
+	scratch    []scanSpan // Reusable scan-line accumulator (sized to display height)
 	colScratch []scanSpan // Reusable per-column extent accumulator for filled circles/ellipses
 	polyXS     []int16    // Reusable x-intersection buffer for polygon fill
 	polyBuf    []int16    // Reusable per-row run storage for polygon boundary
@@ -146,11 +146,11 @@ func (mask DrawQuadrants) has(quadrant DrawQuadrants) bool {
 
 // ----------
 
-// scanSpan stores the min/max X coordinates to fill for a given scanline Y.
+// scanSpan stores the min/max X coordinates to fill for a given scan-line Y.
 // This is used internally for filled shape rendering.
 type scanSpan struct {
-	minX        int16 // Minimum X coordinate for this scanline
-	maxX        int16 // Maximum X coordinate for this scanline
+	minX        int16 // Minimum X coordinate for this scan-line
+	maxX        int16 // Maximum X coordinate for this scan-line
 	initialized bool  // Whether this span has been initialized with values
 }
 

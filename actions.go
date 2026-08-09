@@ -592,9 +592,9 @@ func (t *T8Go) DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants) {
 	t.markDirty(centerX+radius, centerY+radius)
 
 	// Midpoint circle algorithm with integer arithmetic.
-	errorAccumulator := int16(1 - radius)
+	errorAccumulator := 1 - radius
 	deltaX := int16(1)
-	deltaY := int16(-2 * radius)
+	deltaY := -2 * radius
 	offsetX := int16(0)
 	offsetY := radius
 
@@ -652,9 +652,9 @@ func (t *T8Go) DrawCircleFill(centerX, centerY, radius int16, mask DrawQuadrants
 	}
 
 	// Midpoint circle algorithm with integer arithmetic.
-	errorAccumulator := int16(1 - radius)
+	errorAccumulator := 1 - radius
 	deltaX := int16(1)
-	deltaY := int16(-2 * radius)
+	deltaY := -2 * radius
 	offsetX := int16(0)
 	offsetY := radius
 
@@ -1056,9 +1056,9 @@ func (t *T8Go) DrawArc(centerX, centerY, radius int16, angleStart, angleEnd uint
 	}
 
 	// Midpoint circle algorithm (integer arithmetic).
-	errorAccumulator := int16(1 - radius)
+	errorAccumulator := 1 - radius
 	deltaX := int16(1)
-	deltaY := int16(-2 * radius)
+	deltaY := -2 * radius
 	offsetX := int16(0)
 	offsetY := radius
 
@@ -1142,9 +1142,9 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 	clear(t.scratch)
 	accum := arcAccum{bestStartAngleDiff: 255, bestEndAngleDiff: 255}
 
-	errorAccumulator := int16(1 - radius)
+	errorAccumulator := 1 - radius
 	deltaX := int16(1)
-	deltaY := int16(-2 * radius)
+	deltaY := -2 * radius
 	offsetX := int16(0)
 	offsetY := radius
 

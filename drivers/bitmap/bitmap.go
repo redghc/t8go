@@ -218,8 +218,8 @@ func (d *display) saveBMP() error {
 	// BMP rows are stored bottom-to-top, so we need to flip the image
 	pixelData := make([]byte, imageSize)
 
-	for y := int16(0); y < int16(height); y++ {
-		bmpRow := int(height) - 1 - int(y) // Flip vertically for BMP format
+	for y := range int(height) {
+		bmpRow := int(height) - 1 - y // Flip vertically for BMP format
 		rowStart := int64(bmpRow) * int64(rowSize)
 
 		for x := int16(0); x < int16(width); x += 8 {
