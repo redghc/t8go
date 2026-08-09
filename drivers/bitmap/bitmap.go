@@ -61,46 +61,46 @@ func New(config Config) (t8go.IDisplay, error) {
 	return d, nil
 }
 
-// Size returns the display dimensions
+// Size returns the display dimensions.
 func (d *display) Size() (width, height uint16) {
 	return d.width, d.height
 }
 
-// BufferSize returns the size of the display buffer
+// BufferSize returns the size of the display buffer.
 func (d *display) BufferSize() int {
 	return d.bufSize
 }
 
-// Buffer returns the display buffer
+// Buffer returns the display buffer.
 func (d *display) Buffer() []byte {
 	return d.buffer
 }
 
-// ClearBuffer clears the display buffer
+// ClearBuffer clears the display buffer.
 func (d *display) ClearBuffer() {
 	for i := range d.buffer {
 		d.buffer[i] = 0
 	}
 }
 
-// ClearDisplay clears the buffer and saves an empty bitmap
+// ClearDisplay clears the buffer and saves an empty bitmap.
 func (d *display) ClearDisplay() {
 	d.ClearBuffer()
 	_ = d.Display()
 }
 
-// Command is a no-op for bitmap display (maintains interface compatibility)
+// Command is a no-op for bitmap display (maintains interface compatibility).
 func (d *display) Command(cmd byte) error {
 	// No commands needed for bitmap output
 	return nil
 }
 
-// Display saves the current buffer as a BMP file
+// Display saves the current buffer as a BMP file.
 func (d *display) Display() error {
 	return d.saveBMP()
 }
 
-// SetPixel sets a pixel at the given coordinates
+// SetPixel sets a pixel at the given coordinates.
 func (d *display) SetPixel(x, y int16, color bool) {
 	if x < 0 || y < 0 || x >= int16(d.width) || y >= int16(d.height) {
 		return
@@ -121,7 +121,7 @@ func (d *display) SetPixel(x, y int16, color bool) {
 	}
 }
 
-// GetPixel gets the state of a pixel at the given coordinates
+// GetPixel gets the state of a pixel at the given coordinates.
 func (d *display) GetPixel(x, y uint8) bool {
 	if x >= uint8(d.width) || y >= uint8(d.height) {
 		return false
@@ -166,7 +166,7 @@ func (d *display) DisplayRegion(x0, y0, x1, y1 int) error {
 	return d.Display()
 }
 
-// saveBMP saves the display buffer as a BMP file
+// saveBMP saves the display buffer as a BMP file.
 func (d *display) saveBMP() error {
 	file, err := os.Create(d.filename)
 	if err != nil {
