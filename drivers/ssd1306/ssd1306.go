@@ -7,6 +7,28 @@ import (
 	"machine"
 
 	"github.com/redghc/t8go"
+	"github.com/redghc/t8go/helpers"
+)
+
+// Buffer geometry: pixels are packed 8 per byte (one "page").
+const (
+	bitsPerPixelRow = 8    // pixels packed per buffer byte (page height)
+	bitOffsetMask   = 7    // bitsPerPixelRow - 1; masks the bit position within a byte
+	fullPageMask    = 0xFF // all bits set in a page byte
+)
+
+// SSD1306 panel variants.
+const (
+	panelHeight32 = 32 // 128x32 panel uses an alternate COM-pin configuration
+)
+
+// SSD1306 initialization register values (see datasheet).
+const (
+	displayClockSuggested = 0x80 // display clock divide ratio (datasheet suggested)
+	displayOffsetNone     = 0x00 // no vertical display offset
+	startLineOffsetNone   = 0x00 // start-line register set to 0
+	segmentRemapEnable    = 0x01 // SET_SEGMENT_REMAP flag bit
+	vcomDeselectLevel     = 0x20 // VCOMH deselect level (~0.77 * Vcc)
 )
 
 // * ----- Definitions -----
@@ -59,14 +81,14 @@ func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.IDisplay
 		config.VCCMode = VCC_SWITCH_CAP
 	}
 
-	bufferSize := int(config.Width) * int(config.Height) / 8
+	bufferSize := int(config.Width) * int(config.Height) / bitsPerPixelRow
 
 	d := &display{
 		bus:       bus,
 		address:   address,
 		width:     config.Width,
 		height:    config.Height,
-		pageCount: config.Height / 8,
+		pageCount: config.Height / bitsPerPixelRow,
 		stride:    int(config.Width),
 		vccMode:   config.VCCMode,
 		buffer:    make([]byte, bufferSize),
@@ -82,6 +104,7 @@ func NewI2C(bus *machine.I2C, address AddressMode, config Config) (t8go.IDisplay
 }
 
 // init initializes the display.
+// Returns an error if any command in the initialization sequence fails to send.
 func (d *display) init(width, height uint8) error {
 	// Determine VCC-dependent settings
 	var chargePump, contrast, preCharge uint8
@@ -96,7 +119,7 @@ func (d *display) init(width, height uint8) error {
 	}
 
 	var comPins uint8
-	if height == 32 {
+	if height == panelHeight32 {
 		comPins = 0x02
 	} else {
 		comPins = 0x12
@@ -106,21 +129,21 @@ func (d *display) init(width, height uint8) error {
 	cmdSeq := d.cmdBuf[:0]
 	cmdSeq = append(cmdSeq,
 		SET_DISPLAY_OFF,
-		SET_DISPLAY_CLOCK_DIVIDE_RATIO, 0x80,
+		SET_DISPLAY_CLOCK_DIVIDE_RATIO, displayClockSuggested,
 		SET_MULTIPLEX_RATIO, height-1,
-		SET_DISPLAY_OFFSET, 0x00,
-		SET_START_LINE|0x00,
+		SET_DISPLAY_OFFSET, displayOffsetNone,
+		SET_START_LINE|startLineOffsetNone,
 		CHARGE_PUMP_SETTING, chargePump,
 		SET_MEMORY_ADDRESSING_MODE, horizontalAddressingMode,
 
-		SET_SEGMENT_REMAP|0x01,
+		SET_SEGMENT_REMAP|segmentRemapEnable,
 		SET_COM_OUTPUT_SCAN_DIRECTION_DEC,
 
 		SET_COM_PINS, comPins,
 		SET_CONTRAST, contrast,
 
 		SET_PRE_CHARGE_PERIOD, preCharge,
-		SET_VCOM_DESELECT_LEVEL, 0x20,
+		SET_VCOM_DESELECT_LEVEL, vcomDeselectLevel,
 		DISPLAY_ALL_ON_RESUME,
 		SET_NORMAL_DISPLAY,
 		DEACTIVATE_SCROLL,
@@ -131,8 +154,8 @@ func (d *display) init(width, height uint8) error {
 
 // * ----- Getter methods -----
 
-// Size returns the display dimensions as uint16 for interface compatibility.
-func (d *display) Size() (width, height uint16) {
+// Size returns the display dimensions in pixels: `width` and `height`.
+func (d *display) Size() (uint16, uint16) {
 	return uint16(d.width), uint16(d.height)
 }
 
@@ -160,17 +183,20 @@ func (d *display) ClearDisplay() {
 }
 
 // Command sends a single command byte to the display.
+// Returns an error if the I2C write fails.
 func (d *display) Command(cmd byte) error {
 	d.cmdBuf[0] = cmd
 	return d.bus.WriteRegister(d.address, CONTROL_CMD_SINGLE, d.cmdBuf[:1])
 }
 
 // CommandStream writes multiple command bytes with a single control prefix.
+// Returns an error if the I2C write fails.
 func (d *display) CommandStream(cmds ...byte) error {
 	return d.bus.WriteRegister(d.address, CONTROL_CMD_STREAM, cmds)
 }
 
 // Display flushes the full backbuffer to the panel using horizontal addressing.
+// Returns an error if any I2C write during the flush fails.
 func (d *display) Display() error {
 	// Set addressing window to full screen.
 	addrSeq := d.addrBuf[:6]
@@ -191,6 +217,7 @@ func (d *display) Display() error {
 
 // DisplayRegion updates a rectangular region aligned to page rows.
 // It reduces I²C traffic when drawing incrementally.
+// Returns an error if any I2C write during the region flush fails.
 func (d *display) DisplayRegion(x0, y0, x1, y1 int) error {
 	if x0 > x1 {
 		x0, x1 = x1, x0
@@ -211,8 +238,8 @@ func (d *display) DisplayRegion(x0, y0, x1, y1 int) error {
 		y1 = int(d.height) - 1
 	}
 
-	startPage := uint8(y0 >> 3)
-	endPage := uint8(y1 >> 3)
+	startPage := uint8(y0 / bitsPerPixelRow)
+	endPage := uint8(y1 / bitsPerPixelRow)
 
 	// Setup column/page window
 	addr := d.addrBuf[:6]
@@ -245,18 +272,13 @@ func (d *display) FillHRun(x0, x1, y int16, on bool) {
 	if y < 0 || y >= int16(d.height) {
 		return
 	}
-	if x0 < 0 {
-		x0 = 0
-	}
-	if x1 >= int16(d.width) {
-		x1 = int16(d.width) - 1
-	}
-	if x1 < x0 {
+	x0, x1, ok := helpers.ClipSpan(x0, x1, int16(d.width))
+	if !ok {
 		return
 	}
 
-	mask := uint8(1 << (y & 7))
-	base := int(y>>3) * d.stride
+	mask := uint8(1 << (y & bitOffsetMask))
+	base := int(y/bitsPerPixelRow) * d.stride
 	for c := int(x0); c <= int(x1); c++ {
 		if on {
 			d.buffer[base+c] |= mask
@@ -269,47 +291,23 @@ func (d *display) FillHRun(x0, x1, y int16, on bool) {
 // FillRect sets or clears a rectangular region with inclusive bounds.
 // Out-of-bounds coordinates are clipped, and regions outside the display are ignored.
 func (d *display) FillRect(x0, y0, x1, y1 int16, on bool) {
-	if x0 < 0 {
-		x0 = 0
-	}
-	if y0 < 0 {
-		y0 = 0
-	}
-	if x1 >= int16(d.width) {
-		x1 = int16(d.width) - 1
-	}
-	if y1 >= int16(d.height) {
-		y1 = int16(d.height) - 1
-	}
-	if x1 < x0 || y1 < y0 {
+	x0, y0, x1, y1, ok := helpers.ClipRect(x0, y0, x1, y1, int16(d.width), int16(d.height))
+	if !ok {
 		return
 	}
 
-	startPage := int(y0 >> 3)
-	endPage := int(y1 >> 3)
+	startPage := int(y0 / bitsPerPixelRow)
+	endPage := int(y1 / bitsPerPixelRow)
 
 	for page := startPage; page <= endPage; page++ {
-		var lo, hi uint8
-		if page == startPage {
-			lo = uint8(y0 & 7)
-		}
-		if page == endPage {
-			hi = uint8(y1 & 7)
-		} else {
-			hi = 7
-		}
-
-		var mask uint8
-		for b := lo; b <= hi; b++ {
-			mask |= 1 << b
-		}
+		mask := pageMask(y0, y1, page, startPage, endPage)
 
 		rowOffset := page * d.stride
 		for c := int(x0); c <= int(x1); c++ {
 			bi := rowOffset + c
 			if on {
-				if mask == 0xFF {
-					d.buffer[bi] = 0xFF
+				if mask == fullPageMask {
+					d.buffer[bi] = fullPageMask
 				} else {
 					d.buffer[bi] |= mask
 				}
@@ -327,40 +325,22 @@ func (d *display) FillVRun(x, y0, y1 int16, on bool) {
 	if x < 0 || x >= int16(d.width) {
 		return
 	}
-	if y0 < 0 {
-		y0 = 0
-	}
-	if y1 >= int16(d.height) {
-		y1 = int16(d.height) - 1
-	}
-	if y1 < y0 {
+	y0, y1, ok := helpers.ClipSpan(y0, y1, int16(d.height))
+	if !ok {
 		return
 	}
 
 	col := int(x)
-	startPage := int(y0 >> 3)
-	endPage := int(y1 >> 3)
+	startPage := int(y0 / bitsPerPixelRow)
+	endPage := int(y1 / bitsPerPixelRow)
 
 	for page := startPage; page <= endPage; page++ {
-		var lo, hi uint8
-		if page == startPage {
-			lo = uint8(y0 & 7)
-		}
-		if page == endPage {
-			hi = uint8(y1 & 7)
-		} else {
-			hi = 7
-		}
-
-		var mask uint8
-		for b := lo; b <= hi; b++ {
-			mask |= 1 << b
-		}
+		mask := pageMask(y0, y1, page, startPage, endPage)
 
 		bi := page*d.stride + col
 		if on {
-			if mask == 0xFF {
-				d.buffer[bi] = 0xFF
+			if mask == fullPageMask {
+				d.buffer[bi] = fullPageMask
 			} else {
 				d.buffer[bi] |= mask
 			}
@@ -368,6 +348,27 @@ func (d *display) FillVRun(x, y0, y1 int16, on bool) {
 			d.buffer[bi] &^= mask
 		}
 	}
+}
+
+// pageMask returns the bit mask for the pixels of [y0, y1] that fall in `page`,
+// where `page` lies within [startPage, endPage]. Bits [lo, hi] within the
+// 8-pixel page are set.
+func pageMask(y0, y1 int16, page, startPage, endPage int) uint8 {
+	var lo, hi uint8
+	if page == startPage {
+		lo = uint8(y0 & bitOffsetMask)
+	}
+	if page == endPage {
+		hi = uint8(y1 & bitOffsetMask)
+	} else {
+		hi = bitOffsetMask
+	}
+
+	var mask uint8
+	for b := lo; b <= hi; b++ {
+		mask |= 1 << b
+	}
+	return mask
 }
 
 // SetPixel sets a pixel at the given coordinates
@@ -378,8 +379,8 @@ func (d *display) SetPixel(x, y int16, color bool) {
 		return
 	}
 
-	byteIndex := int(x) + (int(y)>>3)*d.stride
-	bitMask := uint8(1 << (y & 7))
+	byteIndex := int(x) + (int(y)/bitsPerPixelRow)*d.stride
+	bitMask := uint8(1 << (y & bitOffsetMask))
 
 	if color {
 		d.buffer[byteIndex] |= bitMask
@@ -394,8 +395,8 @@ func (d *display) GetPixel(x, y uint8) bool {
 		return false
 	}
 
-	byteIndex := int(x) + (int(y)>>3)*d.stride
-	bitMask := uint8(1 << (y & 7))
+	byteIndex := int(x) + (int(y)/bitsPerPixelRow)*d.stride
+	bitMask := uint8(1 << (y & bitOffsetMask))
 
 	return (d.buffer[byteIndex] & bitMask) != 0
 }

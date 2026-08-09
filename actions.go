@@ -61,9 +61,9 @@ func (t *T8Go) DrawLine(startX, startY, endX, endY int16) {
 
 	for currentXPos := startX; currentXPos <= endX; currentXPos++ {
 		if isSteep {
-			t.setPixel(currentYPos, currentXPos)
+			t.setPixelOn(currentYPos, currentXPos)
 		} else {
-			t.setPixel(currentXPos, currentYPos)
+			t.setPixelOn(currentXPos, currentYPos)
 		}
 
 		errorAccumulator -= deltaY
@@ -94,13 +94,8 @@ func (t *T8Go) DrawVLine(originX, originY, length int16) {
 	if originX < 0 || originX >= t.width {
 		return
 	}
-	if y0 < 0 {
-		y0 = 0
-	}
-	if y1 >= t.height {
-		y1 = t.height - 1
-	}
-	if y1 < y0 {
+	y0, y1, ok := helpers.ClipSpan(y0, y1, t.height)
+	if !ok {
 		return
 	}
 
@@ -129,13 +124,8 @@ func (t *T8Go) DrawHLine(originX, originY, length int16) {
 	if originY < 0 || originY >= t.height {
 		return
 	}
-	if x0 < 0 {
-		x0 = 0
-	}
-	if x1 >= t.width {
-		x1 = t.width - 1
-	}
-	if x1 < x0 {
+	x0, x1, ok := helpers.ClipSpan(x0, x1, t.width)
+	if !ok {
 		return
 	}
 
@@ -264,26 +254,8 @@ func (t *T8Go) DrawBoxFill(originX, originY, width, height int16) {
 // fillRect sets the inclusive rectangle (x0,y0)-(x1,y1), clipped to the
 // visible area, and marks it dirty. Coordinates are normalized internally.
 func (t *T8Go) fillRect(x0, y0, x1, y1 int16) {
-	if x0 > x1 {
-		x0, x1 = x1, x0
-	}
-	if y0 > y1 {
-		y0, y1 = y1, y0
-	}
-
-	if x0 < 0 {
-		x0 = 0
-	}
-	if y0 < 0 {
-		y0 = 0
-	}
-	if x1 >= t.width {
-		x1 = t.width - 1
-	}
-	if y1 >= t.height {
-		y1 = t.height - 1
-	}
-	if x1 < x0 || y1 < y0 {
+	x0, y0, x1, y1, ok := helpers.ClipRect(x0, y0, x1, y1, t.width, t.height)
+	if !ok {
 		return
 	}
 
@@ -382,11 +354,9 @@ func (t *T8Go) DrawTriangleFill(x1, y1, x2, y2, x3, y3 int16) {
 	t.paintSpans(t.scratch)
 }
 
-// Minimum number of vertices a polygon outline needs to enclose an area.
+// minPolygonVertices is the minimum number of vertices a polygon (outline or
+// fill) needs to enclose an area.
 const minPolygonVertices = 3
-
-// Minimum number of vertices a polygon fill needs to enclose an area.
-const minPolygonFillVertices = 3
 
 // DrawPolygon draws the boundary of the polygon connecting the given vertices
 // in order. The outline is closed automatically: the last vertex connects back
@@ -434,7 +404,7 @@ func (t *T8Go) DrawPolygon(points ...Point) {
 // sampling: for each row the edge crossings are collected, sorted and filled
 // pairwise, so concave and self-intersecting polygons are rendered correctly.
 func (t *T8Go) DrawPolygonFill(points ...Point) {
-	if len(points) < minPolygonFillVertices {
+	if len(points) < minPolygonVertices {
 		return
 	}
 
@@ -535,7 +505,7 @@ func polygonBoundsY(points []Point) (int16, int16) {
 // scanPixelScale is the scale factor used for pixel-center scanline sampling.
 const scanPixelScale = 2
 
-// polyCrossingStart returns the x coordinate of the first pixel whose center
+// polyCrossingStart returns `x`, the coordinate of the first pixel whose center
 // lies to the right of the intersection of the edge p1-p2 with the center of
 // scanline y, and `ok`, whether the edge crosses that scanline. Horizontal
 // edges never cross. The half-open interval [lo, hi) guarantees that a vertex
@@ -619,20 +589,20 @@ func (t *T8Go) DrawCircle(centerX, centerY, radius int16, mask DrawQuadrants) {
 // filtered by the mask to draw only the selected quadrants.
 func (t *T8Go) drawCircleSection(offsetX, offsetY, centerX, centerY int16, mask DrawQuadrants) {
 	if mask.has(DrawTopRight) {
-		t.setPixel(centerX+offsetX, centerY-offsetY)
-		t.setPixel(centerX+offsetY, centerY-offsetX)
+		t.setPixelOn(centerX+offsetX, centerY-offsetY)
+		t.setPixelOn(centerX+offsetY, centerY-offsetX)
 	}
 	if mask.has(DrawTopLeft) {
-		t.setPixel(centerX-offsetX, centerY-offsetY)
-		t.setPixel(centerX-offsetY, centerY-offsetX)
+		t.setPixelOn(centerX-offsetX, centerY-offsetY)
+		t.setPixelOn(centerX-offsetY, centerY-offsetX)
 	}
 	if mask.has(DrawBottomRight) {
-		t.setPixel(centerX+offsetX, centerY+offsetY)
-		t.setPixel(centerX+offsetY, centerY+offsetX)
+		t.setPixelOn(centerX+offsetX, centerY+offsetY)
+		t.setPixelOn(centerX+offsetY, centerY+offsetX)
 	}
 	if mask.has(DrawBottomLeft) {
-		t.setPixel(centerX-offsetX, centerY+offsetY)
-		t.setPixel(centerX-offsetY, centerY+offsetX)
+		t.setPixelOn(centerX-offsetX, centerY+offsetY)
+		t.setPixelOn(centerX-offsetY, centerY+offsetX)
 	}
 }
 
@@ -843,16 +813,16 @@ func (t *T8Go) drawEllipseSection(offsetX, offsetY, centerX, centerY int16, mask
 		return
 	}
 	if mask.has(DrawTopRight) {
-		t.setPixel(centerX+offsetX, centerY-offsetY)
+		t.setPixelOn(centerX+offsetX, centerY-offsetY)
 	}
 	if mask.has(DrawTopLeft) {
-		t.setPixel(centerX-offsetX, centerY-offsetY)
+		t.setPixelOn(centerX-offsetX, centerY-offsetY)
 	}
 	if mask.has(DrawBottomRight) {
-		t.setPixel(centerX+offsetX, centerY+offsetY)
+		t.setPixelOn(centerX+offsetX, centerY+offsetY)
 	}
 	if mask.has(DrawBottomLeft) {
-		t.setPixel(centerX-offsetX, centerY+offsetY)
+		t.setPixelOn(centerX-offsetX, centerY+offsetY)
 	}
 }
 
@@ -1141,7 +1111,7 @@ func (t *T8Go) DrawArcFill(centerX, centerY, radius int16, angleStart, angleEnd 
 
 	// Perimeter sampling (midpoint circle) → accumulate spans and arc endpoints.
 	clear(t.scratch)
-	accum := arcAccum{bestStartAngleDiff: helpers.AngleMax, bestEndAngleDiff: helpers.AngleMax}
+	accum := arcAccum{bestStartAngleDiff: helpers.AngleFullCircle / 2, bestEndAngleDiff: helpers.AngleFullCircle / 2}
 
 	errorAccumulator := 1 - radius
 	deltaX := int16(1)

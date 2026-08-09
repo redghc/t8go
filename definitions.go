@@ -115,6 +115,11 @@ type dirtyRect struct {
 	x0, y0, x1, y1 int16
 }
 
+// reset marks the dirty region as empty (nothing pending to flush).
+func (d *dirtyRect) reset() {
+	d.valid = false
+}
+
 // ----------
 
 // Point represents a pixel coordinate in the display space.

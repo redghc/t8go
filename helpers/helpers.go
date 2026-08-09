@@ -86,6 +86,54 @@ func NormalizeRect(x0, y0, x1, y1 int16) (int16, int16, int16, int16) {
 	return x0, y0, x1 - x0 + 1, y1 - y0 + 1
 }
 
+// ClipRect clamps the inclusive rectangle (x0,y0)-(x1,y1) to the bounds
+// [0,width) x [0,height), normalizing swapped corners. Returns the clipped
+// `nx0`/`ny0`/`nx1`/`ny1` and `ok`=false when the rectangle lies entirely
+// outside the bounds.
+func ClipRect(x0, y0, x1, y1, width, height int16) (int16, int16, int16, int16, bool) {
+	if x0 > x1 {
+		x0, x1 = x1, x0
+	}
+	if y0 > y1 {
+		y0, y1 = y1, y0
+	}
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+	if x1 >= width {
+		x1 = width - 1
+	}
+	if y1 >= height {
+		y1 = height - 1
+	}
+	if x1 < x0 || y1 < y0 {
+		return 0, 0, 0, 0, false
+	}
+	return x0, y0, x1, y1, true
+}
+
+// ClipSpan clamps the inclusive 1-D span [a0, a1] to [0, n), normalizing a
+// swapped range. Returns the clipped `na0`/`na1` and `ok`=false when the span
+// lies entirely outside the bounds.
+func ClipSpan(a0, a1, n int16) (int16, int16, bool) {
+	if a0 > a1 {
+		a0, a1 = a1, a0
+	}
+	if a0 < 0 {
+		a0 = 0
+	}
+	if a1 >= n {
+		a1 = n - 1
+	}
+	if a1 < a0 {
+		return 0, 0, false
+	}
+	return a0, a1, true
+}
+
 // ApproxAtanUnit64 approximates atan(offsetX/offsetY) mapped to 0..64 units (i.e., 0..90°)
 // using integer arithmetic. For offsetY == 0, it returns 0.
 //

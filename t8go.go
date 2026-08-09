@@ -54,7 +54,7 @@ func (t *T8Go) ClearBuffer() {
 // ClearDisplay clears both the buffer and the physical display.
 func (t *T8Go) ClearDisplay() {
 	t.display.ClearDisplay()
-	t.dirty.valid = false
+	t.dirty.reset()
 }
 
 // Command sends a command byte to the display.
@@ -78,16 +78,17 @@ func (t *T8Go) Display() error {
 		int(t.dirty.x0), int(t.dirty.y0),
 		int(t.dirty.x1), int(t.dirty.y1),
 	)
-	t.dirty.valid = false
+	t.dirty.reset()
 	return err
 }
 
 // DisplayAll flushes the entire display buffer to the physical display,
 // regardless of the tracked dirty region. Use this after modifying Buffer()
 // directly.
+// Returns an error if the display update fails.
 func (t *T8Go) DisplayAll() error {
 	err := t.display.Display()
-	t.dirty.valid = false
+	t.dirty.reset()
 	return err
 }
 
@@ -102,10 +103,10 @@ func (t *T8Go) SetPixel(x, y int16, on bool) {
 	t.display.SetPixel(x, y, on)
 }
 
-// setPixel writes an on-pixel without dirty tracking or bounds handling.
+// setPixelOn writes an on-pixel without dirty tracking or bounds handling.
 // Drawing primitives use it for their per-pixel loops and mark the shape's
 // bounding box once, avoiding per-pixel overhead.
-func (t *T8Go) setPixel(x, y int16) {
+func (t *T8Go) setPixelOn(x, y int16) {
 	t.display.SetPixel(x, y, true)
 }
 

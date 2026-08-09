@@ -97,6 +97,7 @@ func (d *display) Command(cmd byte) error {
 }
 
 // Display saves the current buffer as a BMP file.
+// Returns an error if the file cannot be created or written.
 func (d *display) Display() error {
 	return d.saveBMP()
 }
@@ -163,11 +164,13 @@ func (d *display) FillVRun(x, y0, y1 int16, on bool) {
 
 // DisplayRegion is a no-op for bitmap output: the whole file is
 // rewritten on each flush, so the region argument is irrelevant.
+// Returns an error if the file cannot be created or written.
 func (d *display) DisplayRegion(x0, y0, x1, y1 int) error {
 	return d.Display()
 }
 
 // saveBMP saves the display buffer as a BMP file.
+// Returns an error if the file cannot be created, written, or synced.
 func (d *display) saveBMP() error {
 	file, err := os.Create(d.filename)
 	if err != nil {
