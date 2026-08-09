@@ -176,8 +176,10 @@ func ArcAngleDistance(a, b uint8) uint8 {
 	} else {
 		d = b - a
 	}
-	if d > AngleMax-d {
-		return AngleMax - d
+	// Use uint16 so the 256-d complement can't overflow uint8.
+	d16, full := uint16(d), uint16(AngleFullCircle)
+	if d16 > full-d16 {
+		return uint8(full - d16)
 	}
 	return d
 }
